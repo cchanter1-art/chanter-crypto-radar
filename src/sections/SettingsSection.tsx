@@ -1,15 +1,27 @@
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { useAppState } from "@/context/AppContext";
 import ToggleSwitch from "@/components/ToggleSwitch";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Trash2, Upload } from "lucide-react";
+import {
+  createEmptyLocalAppState,
+  createLocalDataBackup,
+  parseLocalDataBackup,
+} from "@/lib/localDataBackup";
+
+type DataStatus = {
+  type: "success" | "error";
+  message: string;
+};
 
 export default function SettingsSection() {
   const { state, dispatch } = useAppState();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [formData, setFormData] = useState({
     displayName: state.settings.displayName,
     email: state.settings.email,
   });
   const [saved, setSaved] = useState(false);
+  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
 
   const handleSave = () => {
     dispatch({
@@ -24,33 +36,65 @@ export default function SettingsSection() {
   };
 
   const handleExport = () => {
-    const data = {
-      watchlist: state.watchlist,
-      trades: state.trades,
-      settings: state.settings,
-      alerts: state.alerts,
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const backup = createLocalDataBackup(state);
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "chanter-data.json";
+    a.download = `chanter-crypto-radar-backup-${backup.exportedAt.slice(0, 10)}.json`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     URL.revokeObjectURL(url);
+    setDataStatus({ type: "success", message: "Local data backup exported." });
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+
+    if (!file) return;
+
+    try {
+      const rawJson = await file.text();
+      const result = parseLocalDataBackup(rawJson);
+
+      if (result.ok === false) {
+        setDataStatus({ type: "error", message: result.message });
+        return;
+      }
+
+      dispatch({ type: "LOAD_STATE", payload: result.value });
+      setFormData({
+        displayName: result.value.settings.displayName,
+        email: result.value.settings.email,
+      });
+      setDataStatus({ type: "success", message: "Local backup imported." });
+    } catch {
+      setDataStatus({
+        type: "error",
+        message: "Import failed. The selected file could not be read.",
+      });
+    }
   };
 
   const handleClear = () => {
-    if (window.confirm("Are you sure? This will delete your watchlist data, trades, and price alerts.")) {
-      dispatch({ type: "UPDATE_SETTINGS", payload: { displayName: "", email: "" } });
-      state.watchlist.forEach((id) => dispatch({ type: "REMOVE_FROM_WATCHLIST", payload: id }));
-      state.trades.forEach((t) => dispatch({ type: "DELETE_TRADE", payload: t.id }));
-      state.alerts.forEach((alert) => dispatch({ type: "DELETE_PRICE_ALERT", payload: alert.id }));
-      localStorage.removeItem("chanter-watchlist");
-      localStorage.removeItem("chanter-trades");
-      localStorage.removeItem("chanter-settings");
-      localStorage.removeItem("chanter-price-alerts");
-      window.location.reload();
+    if (
+      window.confirm(
+        "Clear all local CHANTER Crypto Radar data from this browser? This cannot be undone.",
+      )
+    ) {
+      const emptyState = createEmptyLocalAppState();
+      dispatch({ type: "LOAD_STATE", payload: emptyState });
+      setFormData({
+        displayName: emptyState.settings.displayName,
+        email: emptyState.settings.email,
+      });
+      setDataStatus({ type: "success", message: "Local app data cleared." });
     }
   };
 
@@ -155,7 +199,7 @@ export default function SettingsSection() {
           </div>
         </div>
 
-        {/* Data */}
+        {/* Export / Import */}
         <div
           className="card-surface rounded-xl p-5 lg:p-6"
           style={{ border: "1px solid rgba(201,215,227,0.06)" }}
@@ -164,18 +208,59 @@ export default function SettingsSection() {
             className="label-upper mb-5"
             style={{ color: "#4b5563" }}
           >
-            Data
+            Export / Import
           </h3>
+          <p
+            className="mb-2 text-sm"
+            style={{
+              color: "#9ca3af",
+              fontFamily: "'DM Sans', sans-serif",
+              fontWeight: 300,
+              lineHeight: 1.6,
+            }}
+          >
+            Back up or restore your watchlist, paper trades, price alerts, and app settings.
+          </p>
+          <p
+            className="mb-5 text-xs"
+            style={{ color: "#4b5563", lineHeight: 1.6 }}
+          >
+            This only affects local browser data. No wallet, trading, or real funds are connected.
+          </p>
           <div className="flex flex-wrap gap-3">
             <button onClick={handleExport} className="btn-accent flex items-center gap-2">
               <Download size={14} />
               Export Data
+            </button>
+            <button onClick={handleImportClick} className="btn-primary flex items-center gap-2">
+              <Upload size={14} />
+              Import Data
             </button>
             <button onClick={handleClear} className="btn-danger flex items-center gap-2">
               <Trash2 size={14} />
               Clear All Data
             </button>
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImport}
+            className="hidden"
+            aria-label="Import local data backup"
+          />
+          {dataStatus && (
+            <p
+              className="mt-4 text-sm"
+              style={{
+                color: dataStatus.type === "success" ? "#22c55e" : "#ef4444",
+                fontFamily: "'DM Sans', sans-serif",
+                fontWeight: 400,
+              }}
+            >
+              {dataStatus.message}
+            </p>
+          )}
         </div>
 
         {/* About */}
