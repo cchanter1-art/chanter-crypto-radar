@@ -1,7 +1,7 @@
 import { DEFAULT_WATCHLIST } from "@/data/mockData";
 import {
-  isValidBacktestRun,
   MAX_BACKTEST_HISTORY,
+  normalizeBacktestRun,
   type BacktestRun,
 } from "@/lib/paperBacktestEngine";
 import {
@@ -230,21 +230,22 @@ function validateBacktestRuns(value: unknown): ValidationResult<BacktestRun[]> {
   const runs: BacktestRun[] = [];
 
   for (const item of value) {
-    if (!isValidBacktestRun(item)) {
+    const normalizedRun = normalizeBacktestRun(item);
+    if (!normalizedRun) {
       return { ok: false, message: "Backup contains an invalid backtest run." };
     }
 
-    if (runIds.has(item.id)) {
+    if (runIds.has(normalizedRun.id)) {
       return { ok: false, message: "Backup contains duplicate backtest run ids." };
     }
 
-    runIds.add(item.id);
+    runIds.add(normalizedRun.id);
     runs.push({
-      ...item,
-      config: { ...item.config },
-      metrics: { ...item.metrics },
-      signalCounts: { ...item.signalCounts },
-      events: item.events.map((event) => ({ ...event })),
+      ...normalizedRun,
+      config: { ...normalizedRun.config },
+      metrics: { ...normalizedRun.metrics },
+      signalCounts: { ...normalizedRun.signalCounts },
+      events: normalizedRun.events.map((event) => ({ ...event })),
     });
   }
 
@@ -302,7 +303,8 @@ export function createLocalDataBackup(
       .slice(0, MAX_PAPER_SIGNAL_HISTORY)
       .map((signal) => ({ ...signal })),
     backtestRuns: backtestRuns
-      .filter(isValidBacktestRun)
+      .map(normalizeBacktestRun)
+      .filter((run): run is BacktestRun => run !== null)
       .slice(0, MAX_BACKTEST_HISTORY)
       .map((run) => ({
         ...run,

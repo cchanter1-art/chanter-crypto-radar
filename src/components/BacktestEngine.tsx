@@ -4,6 +4,7 @@ import { MOCK_BACKTEST_PERIODS, type MockBacktestPeriod } from "@/data/mockHisto
 import { COINS } from "@/data/mockData";
 import {
   clearBacktestHistory,
+  DEFAULT_BACKTEST_ASSUMPTIONS,
   loadBacktestHistory,
   MAX_BACKTEST_HISTORY,
   runPaperBacktest,
@@ -75,11 +76,62 @@ function MetricCard({ label, value, color = "#c9d7e3" }: MetricCardProps) {
   );
 }
 
+interface PercentInputProps {
+  id: string;
+  label: string;
+  value: string;
+  min?: number;
+  max: number;
+  onChange: (value: string) => void;
+}
+
+function PercentInput({ id, label, value, min = 0, max, onChange }: PercentInputProps) {
+  return (
+    <div>
+      <label htmlFor={id} className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+        {label}
+      </label>
+      <input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        step="0.01"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="input-dark"
+        required
+      />
+    </div>
+  );
+}
+
 export default function BacktestEngine() {
   const [startingBalance, setStartingBalance] = useState("10000");
   const [tradeSizePercent, setTradeSizePercent] = useState("25");
   const [coinId, setCoinId] = useState<BacktestCoinId>("all");
   const [period, setPeriod] = useState<MockBacktestPeriod>(90);
+  const [tradingFeePercent, setTradingFeePercent] = useState(
+    String(DEFAULT_BACKTEST_ASSUMPTIONS.tradingFeePercent),
+  );
+  const [slippagePercent, setSlippagePercent] = useState(
+    String(DEFAULT_BACKTEST_ASSUMPTIONS.slippagePercent),
+  );
+  const [spreadPercent, setSpreadPercent] = useState(
+    String(DEFAULT_BACKTEST_ASSUMPTIONS.spreadPercent),
+  );
+  const [stopLossPercent, setStopLossPercent] = useState(
+    String(DEFAULT_BACKTEST_ASSUMPTIONS.stopLossPercent),
+  );
+  const [takeProfitPercent, setTakeProfitPercent] = useState(
+    String(DEFAULT_BACKTEST_ASSUMPTIONS.takeProfitPercent),
+  );
+  const [maxTradeSizePercent, setMaxTradeSizePercent] = useState(
+    String(DEFAULT_BACKTEST_ASSUMPTIONS.maxTradeSizePercent),
+  );
+  const [maxDrawdownStopPercent, setMaxDrawdownStopPercent] = useState(
+    String(DEFAULT_BACKTEST_ASSUMPTIONS.maxDrawdownStopPercent),
+  );
   const [history, setHistory] = useState<BacktestRun[]>(loadBacktestHistory);
   const [activeRun, setActiveRun] = useState<BacktestRun | null>(() => history[0] ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +145,13 @@ export default function BacktestEngine() {
       tradeSizePercent: Number(tradeSizePercent),
       coinId,
       period,
+      tradingFeePercent: Number(tradingFeePercent),
+      slippagePercent: Number(slippagePercent),
+      spreadPercent: Number(spreadPercent),
+      stopLossPercent: Number(stopLossPercent),
+      takeProfitPercent: Number(takeProfitPercent),
+      maxTradeSizePercent: Number(maxTradeSizePercent),
+      maxDrawdownStopPercent: Number(maxDrawdownStopPercent),
     });
 
     if (result.ok === false) {
@@ -123,7 +182,7 @@ export default function BacktestEngine() {
   };
 
   const metrics = activeRun?.metrics;
-  const returnColor = metrics && metrics.simulatedReturnPercent >= 0 ? "#22c55e" : "#ef4444";
+  const returnColor = metrics && metrics.netReturnPercent >= 0 ? "#22c55e" : "#ef4444";
 
   return (
     <section
@@ -160,6 +219,9 @@ export default function BacktestEngine() {
       >
         <p className="text-xs" style={{ color: "#9ca3af" }}>
           Backtest uses mock/local historical data only.
+        </p>
+        <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+          Fees and slippage are estimates.
         </p>
         <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
           Past simulated performance does not predict future results.
@@ -237,6 +299,57 @@ export default function BacktestEngine() {
           </select>
         </div>
 
+        <PercentInput
+          id="backtest-fee"
+          label="Trading Fee (%)"
+          value={tradingFeePercent}
+          max={10}
+          onChange={setTradingFeePercent}
+        />
+        <PercentInput
+          id="backtest-slippage"
+          label="Slippage (%)"
+          value={slippagePercent}
+          max={10}
+          onChange={setSlippagePercent}
+        />
+        <PercentInput
+          id="backtest-spread"
+          label="Spread (%)"
+          value={spreadPercent}
+          max={10}
+          onChange={setSpreadPercent}
+        />
+        <PercentInput
+          id="backtest-stop-loss"
+          label="Stop-Loss (%)"
+          value={stopLossPercent}
+          max={100}
+          onChange={setStopLossPercent}
+        />
+        <PercentInput
+          id="backtest-take-profit"
+          label="Take-Profit (%)"
+          value={takeProfitPercent}
+          max={1000}
+          onChange={setTakeProfitPercent}
+        />
+        <PercentInput
+          id="backtest-max-trade"
+          label="Max Trade Size (%)"
+          value={maxTradeSizePercent}
+          min={1}
+          max={100}
+          onChange={setMaxTradeSizePercent}
+        />
+        <PercentInput
+          id="backtest-max-drawdown"
+          label="Max Drawdown Stop (%)"
+          value={maxDrawdownStopPercent}
+          max={100}
+          onChange={setMaxDrawdownStopPercent}
+        />
+
         <div className="flex flex-wrap gap-3 md:col-span-2 xl:col-span-4">
           <button type="submit" className="btn-accent flex items-center gap-2">
             <Play size={14} />
@@ -298,7 +411,11 @@ export default function BacktestEngine() {
               value={metrics.totalTrades === 0 ? "—" : metrics.profitFactor === null ? "∞" : metrics.profitFactor.toFixed(2)}
             />
             <MetricCard label="Max Drawdown" value={`${metrics.maxDrawdown.toFixed(2)}%`} color="#f59e0b" />
-            <MetricCard label="Simulated Return" value={formatPercent(metrics.simulatedReturnPercent)} color={returnColor} />
+            <MetricCard label="Gross Return" value={formatPercent(metrics.grossReturnPercent)} color={metrics.grossReturnPercent >= 0 ? "#22c55e" : "#ef4444"} />
+            <MetricCard label="Net Return" value={formatPercent(metrics.netReturnPercent)} color={returnColor} />
+            <MetricCard label="Total Fees Paid" value={formatMoney(metrics.totalFeesPaid)} color="#f59e0b" />
+            <MetricCard label="Stop-Loss Exits" value={metrics.stopLossExits.toString()} />
+            <MetricCard label="Take-Profit Exits" value={metrics.takeProfitExits.toString()} />
             <MetricCard label="Final Equity" value={formatMoney(metrics.finalEquity)} color={returnColor} />
           </div>
 
@@ -329,10 +446,10 @@ export default function BacktestEngine() {
             </div>
           ) : (
             <div className="mt-4 overflow-auto rounded-lg" style={{ maxHeight: 560, border: "1px solid rgba(201,215,227,0.05)" }}>
-              <table className="w-full min-w-[980px] border-collapse text-left">
+              <table className="w-full min-w-[1120px] border-collapse text-left">
                 <thead className="sticky top-0" style={{ backgroundColor: "#090d13" }}>
                   <tr>
-                    {["Date", "Coin", "Signal", "Entry", "Exit", "Simulated P/L", "Reason"].map((heading) => (
+                    {["Date", "Coin", "Signal", "Entry", "Exit", "Simulated P/L", "Exit Reason", "Reason"].map((heading) => (
                       <th key={heading} className="px-4 py-3 label-upper" style={{ color: "#4b5563", fontSize: 9 }}>
                         {heading}
                       </th>
@@ -352,6 +469,9 @@ export default function BacktestEngine() {
                         style={{ color: event.pnl === undefined ? "#4b5563" : event.pnl >= 0 ? "#22c55e" : "#ef4444" }}
                       >
                         {event.pnl === undefined ? "—" : formatMoney(event.pnl)}
+                      </td>
+                      <td className="px-4 py-3 text-xs capitalize" style={{ color: event.exitReason ? "#9ca3af" : "#4b5563" }}>
+                        {event.exitReason ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: "#6b7280", minWidth: 320, lineHeight: 1.5 }}>
                         {event.reason}
@@ -383,8 +503,8 @@ export default function BacktestEngine() {
                 <span className="text-xs" style={{ color: "#9ca3af" }}>
                   {run.config.coinId === "all" ? "All coins" : run.config.coinId.toUpperCase()} · {run.config.period} days
                 </span>
-                <span className="data-mono text-xs" style={{ color: run.metrics.simulatedReturnPercent >= 0 ? "#22c55e" : "#ef4444" }}>
-                  {formatPercent(run.metrics.simulatedReturnPercent)}
+                <span className="data-mono text-xs" style={{ color: run.metrics.netReturnPercent >= 0 ? "#22c55e" : "#ef4444" }}>
+                  {formatPercent(run.metrics.netReturnPercent)}
                 </span>
                 <time className="text-[10px]" style={{ color: "#4b5563" }} dateTime={run.createdAt}>
                   {formatRunTime(run.createdAt)}
