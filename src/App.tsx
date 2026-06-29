@@ -10,6 +10,7 @@ import PortfolioSection from "@/sections/PortfolioSection";
 import AnalyticsSection from "@/sections/AnalyticsSection";
 import SettingsSection from "@/sections/SettingsSection";
 import HelpSection from "@/sections/HelpSection";
+import MarketNotes from "@/components/MarketNotes";
 
 function AppContent() {
   const tunnelRef = useRef<TranceTunnel | null>(null);
@@ -59,6 +60,12 @@ function AppContent() {
             element={
               <ViewContainer>
                 <HeroSection />
+                <div
+                  className="relative z-[1] mx-auto px-6 pb-16 lg:px-12"
+                  style={{ maxWidth: 1280 }}
+                >
+                  <MarketNotes />
+                </div>
               </ViewContainer>
             }
           />

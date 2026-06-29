@@ -1,6 +1,7 @@
 import PerformanceChart from "@/components/PerformanceChart";
 import DonutChart from "@/components/DonutChart";
 import MetricsList from "@/components/MetricsList";
+import MarketNotes from "@/components/MarketNotes";
 
 export default function AnalyticsSection() {
   return (
@@ -16,6 +17,8 @@ export default function AnalyticsSection() {
         <DonutChart />
         <MetricsList />
       </div>
+
+      <MarketNotes className="mt-8" />
     </div>
   );
 }
