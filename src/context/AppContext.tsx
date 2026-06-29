@@ -1,6 +1,20 @@
-import { createContext, useContext, useReducer, useEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { AppState, AppAction, AppSettings, Coin, PortfolioPosition } from "@/types";
 import { DEFAULT_TRADES, COINS } from "@/data/mockData";
+import {
+  CryptoPriceServiceError,
+  fetchCryptoPrices,
+  type LiveCoinPrice,
+} from "@/lib/cryptoPriceService";
 
 const STORAGE_KEYS = {
   watchlist: "chanter-watchlist",
@@ -74,18 +88,117 @@ function appReducer(state: AppState, action: AppAction): AppState {
 interface AppContextType {
   state: AppState;
   dispatch: React.Dispatch<AppAction>;
+  coins: Coin[];
+  priceStatus: "loading" | "live" | "fallback";
+  priceError: string | null;
+  lastPriceUpdate: string | null;
+  refreshPrices: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
+function mergeLivePrices(livePrices: LiveCoinPrice[]): Coin[] {
+  const pricesById = new Map(livePrices.map((price) => [price.coinId, price]));
+
+  return COINS.map((coin) => {
+    const livePrice = pricesById.get(coin.id as LiveCoinPrice["coinId"]);
+    if (!livePrice) return coin;
+
+    return {
+      ...coin,
+      price: livePrice.price,
+      change24h: livePrice.change24h,
+      sparkline: livePrice.sparkline.length > 1 ? livePrice.sparkline : coin.sparkline,
+    };
+  });
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, null, loadState);
+  const [coins, setCoins] = useState<Coin[]>(COINS);
+  const [priceStatus, setPriceStatus] = useState<AppContextType["priceStatus"]>("loading");
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [lastPriceUpdate, setLastPriceUpdate] = useState<string | null>(null);
+  const activePriceRequest = useRef<AbortController | null>(null);
+
+  const refreshPrices = useCallback(async () => {
+    activePriceRequest.current?.abort();
+    const controller = new AbortController();
+    activePriceRequest.current = controller;
+
+    setPriceStatus("loading");
+    setPriceError(null);
+
+    try {
+      const livePrices = await fetchCryptoPrices(controller.signal);
+      if (controller.signal.aborted) return;
+
+      const newestUpdate = livePrices.reduce(
+        (latest, price) => price.lastUpdated > latest ? price.lastUpdated : latest,
+        livePrices[0]?.lastUpdated ?? new Date().toISOString(),
+      );
+
+      setCoins(mergeLivePrices(livePrices));
+      setLastPriceUpdate(newestUpdate);
+      setPriceStatus("live");
+    } catch (error) {
+      if (controller.signal.aborted) return;
+
+      setCoins(COINS);
+      setLastPriceUpdate(null);
+      setPriceStatus("fallback");
+      setPriceError(
+        error instanceof CryptoPriceServiceError
+          ? error.message
+          : "Live prices are unavailable. Mock prices are in use.",
+      );
+    } finally {
+      if (activePriceRequest.current === controller) {
+        activePriceRequest.current = null;
+      }
+    }
+  }, []);
 
   useEffect(() => {
     saveState(state);
   }, [state]);
 
-  return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
+  useEffect(() => {
+    const initialRefreshId = window.setTimeout(() => {
+      void refreshPrices();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(initialRefreshId);
+      activePriceRequest.current?.abort();
+    };
+  }, [refreshPrices]);
+
+  useEffect(() => {
+    if (!state.settings.autoRefresh) return;
+
+    const intervalId = window.setInterval(() => {
+      void refreshPrices();
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [state.settings.autoRefresh, refreshPrices]);
+
+  return (
+    <AppContext.Provider
+      value={{
+        state,
+        dispatch,
+        coins,
+        priceStatus,
+        priceError,
+        lastPriceUpdate,
+        refreshPrices,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
 }
 
 export function useAppState(): AppContextType {
@@ -101,9 +214,9 @@ export function usePortfolio(): {
   totalPL: number;
   totalPLPercent: number;
 } {
-  const { state } = useAppState();
+  const { state, coins } = useAppState();
 
-  const coinMap = new Map(COINS.map((c: Coin) => [c.id, c]));
+  const coinMap = new Map(coins.map((c: Coin) => [c.id, c]));
 
   const positionsMap = new Map<string, { holdings: number; invested: number; tradeCount: number }>();
 

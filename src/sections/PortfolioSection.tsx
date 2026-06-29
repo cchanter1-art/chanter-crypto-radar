@@ -4,6 +4,7 @@ import { useAppState, usePortfolio } from "@/context/AppContext";
 import StatCard from "@/components/StatCard";
 import PortfolioTable from "@/components/PortfolioTable";
 import AddTradeModal from "@/components/AddTradeModal";
+import MarketPriceStatus from "@/components/MarketPriceStatus";
 
 export default function PortfolioSection() {
   const { dispatch } = useAppState();
@@ -24,6 +25,8 @@ export default function PortfolioSection() {
           Simulate trades and track performance without real capital
         </p>
       </div>
+
+      <MarketPriceStatus />
 
       {/* Summary Bar */}
       <div className="flex flex-col sm:flex-row gap-4 lg:gap-6 mb-8">

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X, ArrowDownLeft, ArrowUpRight } from "lucide-react";
-import { COINS } from "@/data/mockData";
+import { useAppState } from "@/context/AppContext";
 import type { PaperTrade } from "@/types";
 
 interface AddTradeModalProps {
@@ -9,12 +9,13 @@ interface AddTradeModalProps {
 }
 
 export default function AddTradeModal({ onClose, onAdd }: AddTradeModalProps) {
+  const { coins } = useAppState();
   const [coinId, setCoinId] = useState("");
   const [type, setType] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
   const [price, setPrice] = useState("");
 
-  const selectedCoin = COINS.find((c) => c.id === coinId);
+  const selectedCoin = coins.find((c) => c.id === coinId);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,7 +123,7 @@ export default function AddTradeModal({ onClose, onAdd }: AddTradeModalProps) {
             value={coinId}
             onChange={(e) => {
               setCoinId(e.target.value);
-              const coin = COINS.find((c) => c.id === e.target.value);
+              const coin = coins.find((c) => c.id === e.target.value);
               if (coin) setPrice(coin.price.toFixed(2));
             }}
             className="input-dark cursor-pointer"
@@ -131,7 +132,7 @@ export default function AddTradeModal({ onClose, onAdd }: AddTradeModalProps) {
             <option value="" disabled>
               Select coin...
             </option>
-            {COINS.map((coin) => (
+            {coins.map((coin) => (
               <option key={coin.id} value={coin.id}>
                 {coin.symbol} — {coin.name}
               </option>

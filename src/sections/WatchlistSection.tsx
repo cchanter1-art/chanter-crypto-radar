@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useAppState } from "@/context/AppContext";
-import { COINS } from "@/data/mockData";
 import CoinCard from "@/components/CoinCard";
 import AddCoinModal from "@/components/AddCoinModal";
+import MarketPriceStatus from "@/components/MarketPriceStatus";
 
 export default function WatchlistSection() {
-  const { state, dispatch } = useAppState();
+  const { state, dispatch, coins } = useAppState();
   const [showModal, setShowModal] = useState(false);
 
-  const watchlistCoins = COINS.filter((c) => state.watchlist.includes(c.id));
+  const watchlistCoins = coins.filter((c) => state.watchlist.includes(c.id));
 
   const handleAdd = (coinId: string) => {
     dispatch({ type: "ADD_TO_WATCHLIST", payload: coinId });
@@ -26,13 +26,15 @@ export default function WatchlistSection() {
         <p className="section-subtitle">Track your favorite assets in real-time</p>
       </div>
 
+      <MarketPriceStatus />
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {watchlistCoins.map((coin) => (
           <CoinCard key={coin.id} coin={coin} onRemove={handleRemove} />
         ))}
       </div>
 
-      {watchlistCoins.length < COINS.length && (
+      {watchlistCoins.length < coins.length && (
         <button
           onClick={() => setShowModal(true)}
           className="btn-accent mt-8 flex items-center gap-2"
