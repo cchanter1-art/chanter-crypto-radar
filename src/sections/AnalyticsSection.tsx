@@ -3,6 +3,7 @@ import DonutChart from "@/components/DonutChart";
 import MetricsList from "@/components/MetricsList";
 import MarketNotes from "@/components/MarketNotes";
 import PaperRiskEngine from "@/components/PaperRiskEngine";
+import PaperSignalEngine from "@/components/PaperSignalEngine";
 
 export default function AnalyticsSection() {
   return (
@@ -20,6 +21,8 @@ export default function AnalyticsSection() {
       </div>
 
       <PaperRiskEngine className="mt-8" />
+
+      <PaperSignalEngine className="mt-8" />
 
       <MarketNotes className="mt-8" />
     </div>

@@ -7,6 +7,7 @@ import {
   createLocalDataBackup,
   parseLocalDataBackup,
 } from "@/lib/localDataBackup";
+import { clearPaperSignalHistory } from "@/lib/paperSignalEngine";
 
 type DataStatus = {
   type: "success" | "error";
@@ -90,6 +91,7 @@ export default function SettingsSection() {
     ) {
       const emptyState = createEmptyLocalAppState();
       dispatch({ type: "LOAD_STATE", payload: emptyState });
+      clearPaperSignalHistory();
       setFormData({
         displayName: emptyState.settings.displayName,
         email: emptyState.settings.email,

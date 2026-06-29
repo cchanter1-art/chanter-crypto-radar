@@ -11,14 +11,25 @@ import type { PaperTrade } from "@/types";
 interface AddTradeModalProps {
   onClose: () => void;
   onAdd: (trade: PaperTrade) => void;
+  initialCoinId?: string;
+  initialType?: "buy" | "sell";
 }
 
-export default function AddTradeModal({ onClose, onAdd }: AddTradeModalProps) {
+export default function AddTradeModal({
+  onClose,
+  onAdd,
+  initialCoinId = "",
+  initialType = "buy",
+}: AddTradeModalProps) {
   const { state, coins } = useAppState();
-  const [coinId, setCoinId] = useState("");
-  const [type, setType] = useState<"buy" | "sell">("buy");
+  const safeInitialCoinId = isSupportedPaperCoin(initialCoinId) ? initialCoinId : "";
+  const [coinId, setCoinId] = useState(safeInitialCoinId);
+  const [type, setType] = useState<"buy" | "sell">(initialType);
   const [amount, setAmount] = useState("");
-  const [price, setPrice] = useState("");
+  const [price, setPrice] = useState(() => {
+    const initialCoin = coins.find((coin) => coin.id === safeInitialCoinId);
+    return initialCoin ? initialCoin.price.toFixed(2) : "";
+  });
   const [formError, setFormError] = useState<string | null>(null);
 
   const selectedCoin = coins.find((coin) => coin.id === coinId);

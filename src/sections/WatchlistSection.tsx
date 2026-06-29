@@ -3,6 +3,7 @@ import CoinCard from "@/components/CoinCard";
 import MarketPriceStatus from "@/components/MarketPriceStatus";
 import PriceAlerts from "@/components/PriceAlerts";
 import WatchlistCoinManager from "@/components/WatchlistCoinManager";
+import PaperSignalEngine from "@/components/PaperSignalEngine";
 
 export default function WatchlistSection() {
   const { state, dispatch, coins } = useAppState();
@@ -45,6 +46,8 @@ export default function WatchlistSection() {
       <WatchlistCoinManager />
 
       <PriceAlerts />
+
+      <PaperSignalEngine className="mt-8" />
     </div>
   );
 }

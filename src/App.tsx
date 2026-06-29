@@ -10,6 +10,7 @@ import AnalyticsSection from "@/sections/AnalyticsSection";
 import SettingsSection from "@/sections/SettingsSection";
 import HelpSection from "@/sections/HelpSection";
 import MarketNotes from "@/components/MarketNotes";
+import PaperSignalEngine from "@/components/PaperSignalEngine";
 import type { TranceTunnel } from "@/lib/TranceTunnel";
 
 function AppContent() {
@@ -81,7 +82,8 @@ function AppContent() {
                   className="relative z-[1] mx-auto px-6 pb-16 lg:px-12"
                   style={{ maxWidth: 1280 }}
                 >
-                  <MarketNotes />
+                  <PaperSignalEngine />
+                  <MarketNotes className="mt-8" />
                 </div>
               </ViewContainer>
             }
