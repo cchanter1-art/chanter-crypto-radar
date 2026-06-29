@@ -10,9 +10,13 @@ export default function DonutChart() {
   const radius = 80;
   const innerRadius = 50;
 
-  let startAngle = 0;
-
-  const segments = allocation.map((item) => {
+  const segments = allocation.map((item, index) => {
+    const startAngle = allocation
+      .slice(0, index)
+      .reduce(
+        (total, previous) => total + (previous.percentage / 100) * 2 * Math.PI,
+        0,
+      );
     const coin = coinMap.get(item.coinId);
     const angle = (item.percentage / 100) * 2 * Math.PI;
     const endAngle = startAngle + angle;
@@ -38,16 +42,13 @@ export default function DonutChart() {
     ].join(" ");
 
     const midAngle = startAngle + angle / 2;
-    const result = {
+    return {
       path,
       color: coin?.color || "#cc9258",
       symbol: coin?.symbol || item.coinId.toUpperCase(),
       percentage: item.percentage,
       midAngle,
     };
-
-    startAngle = endAngle;
-    return result;
   });
 
   return (

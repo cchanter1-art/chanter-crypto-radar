@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
-import { AppProvider } from "@/context/AppContext";
+import { AppProvider } from "@/context/AppProvider";
 import { TranceTunnel } from "@/lib/TranceTunnel";
 import Navigation from "@/components/Navigation";
 import ViewContainer from "@/components/ViewContainer";

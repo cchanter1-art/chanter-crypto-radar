@@ -28,6 +28,7 @@ export default function SettingsSection() {
       watchlist: state.watchlist,
       trades: state.trades,
       settings: state.settings,
+      alerts: state.alerts,
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -40,13 +41,15 @@ export default function SettingsSection() {
   };
 
   const handleClear = () => {
-    if (window.confirm("Are you sure? This will delete all your watchlist data and trades.")) {
+    if (window.confirm("Are you sure? This will delete your watchlist data, trades, and price alerts.")) {
       dispatch({ type: "UPDATE_SETTINGS", payload: { displayName: "", email: "" } });
       state.watchlist.forEach((id) => dispatch({ type: "REMOVE_FROM_WATCHLIST", payload: id }));
       state.trades.forEach((t) => dispatch({ type: "DELETE_TRADE", payload: t.id }));
+      state.alerts.forEach((alert) => dispatch({ type: "DELETE_PRICE_ALERT", payload: alert.id }));
       localStorage.removeItem("chanter-watchlist");
       localStorage.removeItem("chanter-trades");
       localStorage.removeItem("chanter-settings");
+      localStorage.removeItem("chanter-price-alerts");
       window.location.reload();
     }
   };
@@ -118,7 +121,7 @@ export default function SettingsSection() {
           <div className="flex flex-col gap-5">
             <ToggleSwitch
               label="Price Alerts"
-              description="Get notified when coins hit target prices"
+              description="Enable local in-app checks when coins hit target prices"
               checked={state.settings.priceAlerts}
               onChange={(checked) =>
                 dispatch({ type: "UPDATE_SETTINGS", payload: { priceAlerts: checked } })

@@ -4,6 +4,7 @@ import { useAppState } from "@/context/AppContext";
 import CoinCard from "@/components/CoinCard";
 import AddCoinModal from "@/components/AddCoinModal";
 import MarketPriceStatus from "@/components/MarketPriceStatus";
+import PriceAlerts from "@/components/PriceAlerts";
 
 export default function WatchlistSection() {
   const { state, dispatch, coins } = useAppState();
@@ -43,6 +44,8 @@ export default function WatchlistSection() {
           Add Coin
         </button>
       )}
+
+      <PriceAlerts />
 
       {showModal && (
         <AddCoinModal

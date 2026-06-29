@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from "react";
 
 export function useAnimatedNumber(target: number, duration: number = 800, decimals: number = 2): number {
   const [current, setCurrent] = useState(0);
+  const currentRef = useRef(0);
   const startRef = useRef<number | null>(null);
   const fromRef = useRef(0);
   const toRef = useRef(target);
 
   useEffect(() => {
-    fromRef.current = current;
+    fromRef.current = currentRef.current;
     toRef.current = target;
     startRef.current = null;
 
@@ -19,6 +20,7 @@ export function useAnimatedNumber(target: number, duration: number = 800, decima
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
       const value = fromRef.current + (toRef.current - fromRef.current) * eased;
+      currentRef.current = value;
       setCurrent(value);
 
       if (progress < 1) {
