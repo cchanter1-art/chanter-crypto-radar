@@ -57,6 +57,7 @@ export interface AppState {
 export type AppAction =
   | { type: "ADD_TO_WATCHLIST"; payload: string }
   | { type: "REMOVE_FROM_WATCHLIST"; payload: string }
+  | { type: "RESTORE_DEFAULT_WATCHLIST" }
   | { type: "ADD_TRADE"; payload: PaperTrade }
   | { type: "DELETE_TRADE"; payload: string }
   | { type: "ADD_PRICE_ALERT"; payload: PriceAlert }

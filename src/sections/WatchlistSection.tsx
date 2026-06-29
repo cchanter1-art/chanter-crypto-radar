@@ -1,20 +1,13 @@
-import { useState } from "react";
-import { Plus } from "lucide-react";
 import { useAppState } from "@/context/AppContext";
 import CoinCard from "@/components/CoinCard";
-import AddCoinModal from "@/components/AddCoinModal";
 import MarketPriceStatus from "@/components/MarketPriceStatus";
 import PriceAlerts from "@/components/PriceAlerts";
+import WatchlistCoinManager from "@/components/WatchlistCoinManager";
 
 export default function WatchlistSection() {
   const { state, dispatch, coins } = useAppState();
-  const [showModal, setShowModal] = useState(false);
 
   const watchlistCoins = coins.filter((c) => state.watchlist.includes(c.id));
-
-  const handleAdd = (coinId: string) => {
-    dispatch({ type: "ADD_TO_WATCHLIST", payload: coinId });
-  };
 
   const handleRemove = (coinId: string) => {
     dispatch({ type: "REMOVE_FROM_WATCHLIST", payload: coinId });
@@ -29,31 +22,29 @@ export default function WatchlistSection() {
 
       <MarketPriceStatus />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {watchlistCoins.map((coin) => (
-          <CoinCard key={coin.id} coin={coin} onRemove={handleRemove} />
-        ))}
-      </div>
-
-      {watchlistCoins.length < coins.length && (
-        <button
-          onClick={() => setShowModal(true)}
-          className="btn-accent mt-8 flex items-center gap-2"
+      {watchlistCoins.length === 0 ? (
+        <div
+          className="card-surface rounded-xl p-8 text-center"
+          style={{ border: "1px solid rgba(201,215,227,0.06)" }}
         >
-          <Plus size={14} />
-          Add Coin
-        </button>
+          <p className="text-sm" style={{ color: "#c9d7e3" }}>
+            Your watchlist is empty.
+          </p>
+          <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>
+            Add a supported coin below or restore the default watchlist.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {watchlistCoins.map((coin) => (
+            <CoinCard key={coin.id} coin={coin} onRemove={handleRemove} />
+          ))}
+        </div>
       )}
+
+      <WatchlistCoinManager />
 
       <PriceAlerts />
-
-      {showModal && (
-        <AddCoinModal
-          onClose={() => setShowModal(false)}
-          onAdd={handleAdd}
-          existingIds={state.watchlist}
-        />
-      )}
     </div>
   );
 }

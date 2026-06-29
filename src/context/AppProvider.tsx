@@ -8,7 +8,7 @@ import {
 } from "react";
 import { AppContext, type AppContextType } from "@/context/AppContext";
 import type { AppState, AppAction, AppSettings, Coin, PriceAlert } from "@/types";
-import { DEFAULT_TRADES, COINS } from "@/data/mockData";
+import { DEFAULT_TRADES, DEFAULT_WATCHLIST, COINS } from "@/data/mockData";
 import {
   CryptoPriceServiceError,
   fetchCryptoPrices,
@@ -29,6 +29,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoRefresh: false,
 };
 
+const SUPPORTED_COIN_IDS = new Set(DEFAULT_WATCHLIST);
+
+function normalizeWatchlist(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_WATCHLIST];
+  return DEFAULT_WATCHLIST.filter((coinId) => value.includes(coinId));
+}
+
 function loadState(): AppState {
   try {
     const watchlistRaw = localStorage.getItem(STORAGE_KEYS.watchlist);
@@ -36,7 +43,9 @@ function loadState(): AppState {
     const settingsRaw = localStorage.getItem(STORAGE_KEYS.settings);
     const alertsRaw = localStorage.getItem(STORAGE_KEYS.alerts);
 
-    const watchlist = watchlistRaw ? JSON.parse(watchlistRaw) : ["btc", "eth", "sol", "ada", "avax"];
+    const watchlist = watchlistRaw
+      ? normalizeWatchlist(JSON.parse(watchlistRaw))
+      : [...DEFAULT_WATCHLIST];
     const trades = tradesRaw ? JSON.parse(tradesRaw) : DEFAULT_TRADES;
     const settings = settingsRaw ? JSON.parse(settingsRaw) : DEFAULT_SETTINGS;
     let alerts: PriceAlert[] = [];
@@ -52,7 +61,7 @@ function loadState(): AppState {
     return { watchlist, trades, settings, alerts };
   } catch {
     return {
-      watchlist: ["btc", "eth", "sol", "ada", "avax"],
+      watchlist: [...DEFAULT_WATCHLIST],
       trades: DEFAULT_TRADES,
       settings: DEFAULT_SETTINGS,
       alerts: [],
@@ -74,11 +83,16 @@ function saveState(state: AppState): void {
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "ADD_TO_WATCHLIST":
-      if (state.watchlist.includes(action.payload)) return state;
+      if (!SUPPORTED_COIN_IDS.has(action.payload) || state.watchlist.includes(action.payload)) {
+        return state;
+      }
       return { ...state, watchlist: [...state.watchlist, action.payload] };
 
     case "REMOVE_FROM_WATCHLIST":
       return { ...state, watchlist: state.watchlist.filter((id) => id !== action.payload) };
+
+    case "RESTORE_DEFAULT_WATCHLIST":
+      return { ...state, watchlist: [...DEFAULT_WATCHLIST] };
 
     case "ADD_TRADE":
       return { ...state, trades: [...state.trades, action.payload] };

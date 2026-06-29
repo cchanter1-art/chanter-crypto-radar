@@ -48,6 +48,8 @@ export const COINS: Coin[] = [
   },
 ];
 
+export const DEFAULT_WATCHLIST = COINS.map((coin) => coin.id);
+
 export const DEFAULT_TRADES: PaperTrade[] = [
   {
     id: "trade-1",
