@@ -79,6 +79,13 @@ export const MAX_BACKTEST_HISTORY = 5;
 
 const SUPPORTED_COIN_IDS = ["btc", "eth", "sol", "ada", "avax"] as const;
 const SUPPORTED_COIN_SET = new Set<string>(SUPPORTED_COIN_IDS);
+const SUPPORTED_SYMBOLS_BY_ID = new Map([
+  ["btc", "BTC"],
+  ["eth", "ETH"],
+  ["sol", "SOL"],
+  ["ada", "ADA"],
+  ["avax", "AVAX"],
+]);
 const SIGNAL_LABELS = new Set<PaperSignalLabel>(["BUY", "SELL", "HOLD", "AVOID"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -323,42 +330,71 @@ export function runPaperBacktest(config: BacktestConfig): BacktestResult {
 function isValidBacktestEvent(value: unknown): value is BacktestEvent {
   return isRecord(value) &&
     typeof value.id === "string" &&
+    value.id.trim() !== "" &&
     isValidDate(value.date) &&
     typeof value.coinId === "string" &&
     SUPPORTED_COIN_SET.has(value.coinId) &&
     typeof value.symbol === "string" &&
+    value.symbol === SUPPORTED_SYMBOLS_BY_ID.get(value.coinId) &&
     typeof value.signal === "string" &&
     SIGNAL_LABELS.has(value.signal as PaperSignalLabel) &&
-    (value.entryPrice === undefined || isFiniteNumber(value.entryPrice)) &&
-    (value.exitPrice === undefined || isFiniteNumber(value.exitPrice)) &&
+    (value.entryPrice === undefined || (isFiniteNumber(value.entryPrice) && value.entryPrice > 0)) &&
+    (value.exitPrice === undefined || (isFiniteNumber(value.exitPrice) && value.exitPrice > 0)) &&
     (value.pnl === undefined || isFiniteNumber(value.pnl)) &&
-    typeof value.reason === "string";
+    typeof value.reason === "string" &&
+    value.reason.trim() !== "";
 }
 
-function isValidBacktestRun(value: unknown): value is BacktestRun {
+export function isValidBacktestRun(value: unknown): value is BacktestRun {
   if (!isRecord(value) || !isRecord(value.config) || !isRecord(value.metrics)) return false;
 
   const config = value.config as unknown as BacktestConfig;
   const metrics = value.metrics;
   const signalCounts = value.signalCounts;
 
-  return typeof value.id === "string" &&
-    isValidDate(value.createdAt) &&
-    isValidDate(value.periodStart) &&
-    isValidDate(value.periodEnd) &&
-    validateBacktestConfig(config) === null &&
-    isFiniteNumber(metrics.totalTrades) &&
-    isFiniteNumber(metrics.winRate) &&
-    isFiniteNumber(metrics.averageWin) &&
-    isFiniteNumber(metrics.averageLoss) &&
-    (metrics.profitFactor === null || isFiniteNumber(metrics.profitFactor)) &&
-    isFiniteNumber(metrics.maxDrawdown) &&
-    isFiniteNumber(metrics.simulatedReturnPercent) &&
-    isFiniteNumber(metrics.finalEquity) &&
-    isRecord(signalCounts) &&
-    [...SIGNAL_LABELS].every((label) => isFiniteNumber(signalCounts[label])) &&
-    Array.isArray(value.events) &&
-    value.events.every(isValidBacktestEvent);
+  if (
+    typeof value.id !== "string" ||
+    value.id.trim() === "" ||
+    !isValidDate(value.createdAt) ||
+    !isValidDate(value.periodStart) ||
+    !isValidDate(value.periodEnd) ||
+    Date.parse(value.periodStart) > Date.parse(value.periodEnd) ||
+    validateBacktestConfig(config) !== null ||
+    !Number.isInteger(metrics.totalTrades) ||
+    (metrics.totalTrades as number) < 0 ||
+    !isFiniteNumber(metrics.winRate) ||
+    metrics.winRate < 0 ||
+    metrics.winRate > 100 ||
+    !isFiniteNumber(metrics.averageWin) ||
+    metrics.averageWin < 0 ||
+    !isFiniteNumber(metrics.averageLoss) ||
+    metrics.averageLoss > 0 ||
+    (metrics.profitFactor !== null &&
+      (!isFiniteNumber(metrics.profitFactor) || metrics.profitFactor < 0)) ||
+    !isFiniteNumber(metrics.maxDrawdown) ||
+    metrics.maxDrawdown < 0 ||
+    !isFiniteNumber(metrics.simulatedReturnPercent) ||
+    !isFiniteNumber(metrics.finalEquity) ||
+    metrics.finalEquity < 0 ||
+    !isRecord(signalCounts) ||
+    ![...SIGNAL_LABELS].every(
+      (label) => Number.isInteger(signalCounts[label]) && (signalCounts[label] as number) >= 0,
+    ) ||
+    !Array.isArray(value.events) ||
+    !value.events.every(isValidBacktestEvent)
+  ) {
+    return false;
+  }
+
+  const eventIds = new Set(value.events.map((event) => event.id));
+  const signalCountTotal = [...SIGNAL_LABELS].reduce(
+    (total, label) => total + (signalCounts[label] as number),
+    0,
+  );
+
+  return eventIds.size === value.events.length &&
+    signalCountTotal === value.events.length &&
+    (metrics.totalTrades as number) <= value.events.length;
 }
 
 export function loadBacktestHistory(): BacktestRun[] {

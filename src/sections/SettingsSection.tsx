@@ -12,7 +12,11 @@ import {
   loadPaperSignalHistory,
   savePaperSignalHistory,
 } from "@/lib/paperSignalEngine";
-import { clearBacktestHistory } from "@/lib/paperBacktestEngine";
+import {
+  clearBacktestHistory,
+  loadBacktestHistory,
+  saveBacktestHistory,
+} from "@/lib/paperBacktestEngine";
 
 type DataStatus = {
   type: "success" | "error";
@@ -42,7 +46,11 @@ export default function SettingsSection() {
   };
 
   const handleExport = () => {
-    const backup = createLocalDataBackup(state, loadPaperSignalHistory());
+    const backup = createLocalDataBackup(
+      state,
+      loadPaperSignalHistory(),
+      loadBacktestHistory(),
+    );
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -74,10 +82,21 @@ export default function SettingsSection() {
         return;
       }
 
+      const previousPaperSignals = loadPaperSignalHistory();
+
       if (!savePaperSignalHistory(result.value.paperSignals)) {
         setDataStatus({
           type: "error",
           message: "Import failed. Paper signal history could not be saved in this browser.",
+        });
+        return;
+      }
+
+      if (!saveBacktestHistory(result.value.backtestRuns)) {
+        savePaperSignalHistory(previousPaperSignals);
+        setDataStatus({
+          type: "error",
+          message: "Import failed. Backtest history could not be saved in this browser.",
         });
         return;
       }
@@ -236,7 +255,7 @@ export default function SettingsSection() {
             }}
           >
             Back up or restore your watchlist, paper trades, price alerts, paper signal history,
-            and app settings.
+            saved backtests, and app settings.
           </p>
           <p
             className="mb-5 text-xs"

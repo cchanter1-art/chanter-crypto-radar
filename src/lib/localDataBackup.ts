@@ -1,5 +1,10 @@
 import { DEFAULT_WATCHLIST } from "@/data/mockData";
 import {
+  isValidBacktestRun,
+  MAX_BACKTEST_HISTORY,
+  type BacktestRun,
+} from "@/lib/paperBacktestEngine";
+import {
   isValidPaperSignal,
   MAX_PAPER_SIGNAL_HISTORY,
   type PaperSignal,
@@ -34,12 +39,14 @@ export interface LocalDataBackup {
   paperTrades: PaperTrade[];
   priceAlerts: PriceAlert[];
   paperSignals: PaperSignal[];
+  backtestRuns: BacktestRun[];
   settings: AppSettings;
 }
 
 export interface ImportedLocalDataBackup {
   state: AppState;
   paperSignals: PaperSignal[];
+  backtestRuns: BacktestRun[];
 }
 
 type ValidationResult<T> =
@@ -210,6 +217,40 @@ function validatePaperSignals(value: unknown): ValidationResult<PaperSignal[]> {
   return { ok: true, value: signals.slice(0, MAX_PAPER_SIGNAL_HISTORY) };
 }
 
+function validateBacktestRuns(value: unknown): ValidationResult<BacktestRun[]> {
+  if (value === undefined) {
+    return { ok: true, value: [] };
+  }
+
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "Backup backtest history must be an array." };
+  }
+
+  const runIds = new Set<string>();
+  const runs: BacktestRun[] = [];
+
+  for (const item of value) {
+    if (!isValidBacktestRun(item)) {
+      return { ok: false, message: "Backup contains an invalid backtest run." };
+    }
+
+    if (runIds.has(item.id)) {
+      return { ok: false, message: "Backup contains duplicate backtest run ids." };
+    }
+
+    runIds.add(item.id);
+    runs.push({
+      ...item,
+      config: { ...item.config },
+      metrics: { ...item.metrics },
+      signalCounts: { ...item.signalCounts },
+      events: item.events.map((event) => ({ ...event })),
+    });
+  }
+
+  return { ok: true, value: runs.slice(0, MAX_BACKTEST_HISTORY) };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -247,6 +288,7 @@ export function createEmptyLocalAppState(): AppState {
 export function createLocalDataBackup(
   state: AppState,
   paperSignals: PaperSignal[] = [],
+  backtestRuns: BacktestRun[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -259,6 +301,16 @@ export function createLocalDataBackup(
       .filter(isValidPaperSignal)
       .slice(0, MAX_PAPER_SIGNAL_HISTORY)
       .map((signal) => ({ ...signal })),
+    backtestRuns: backtestRuns
+      .filter(isValidBacktestRun)
+      .slice(0, MAX_BACKTEST_HISTORY)
+      .map((run) => ({
+        ...run,
+        config: { ...run.config },
+        metrics: { ...run.metrics },
+        signalCounts: { ...run.signalCounts },
+        events: run.events.map((event) => ({ ...event })),
+      })),
     settings: { ...state.settings },
   };
 }
@@ -306,6 +358,11 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${paperSignals.message}` };
   }
 
+  const backtestRuns = validateBacktestRuns(parsed.backtestRuns);
+  if (backtestRuns.ok === false) {
+    return { ok: false, message: `Import failed. ${backtestRuns.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -321,6 +378,7 @@ export function parseLocalDataBackup(
         settings: settings.value,
       },
       paperSignals: paperSignals.value,
+      backtestRuns: backtestRuns.value,
     },
   };
 }
