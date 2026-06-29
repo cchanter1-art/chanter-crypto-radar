@@ -12,6 +12,7 @@ import {
   loadPaperSignalHistory,
   savePaperSignalHistory,
 } from "@/lib/paperSignalEngine";
+import { clearBacktestHistory } from "@/lib/paperBacktestEngine";
 
 type DataStatus = {
   type: "success" | "error";
@@ -104,6 +105,7 @@ export default function SettingsSection() {
       const emptyState = createEmptyLocalAppState();
       dispatch({ type: "LOAD_STATE", payload: emptyState });
       clearPaperSignalHistory();
+      clearBacktestHistory();
       setFormData({
         displayName: emptyState.settings.displayName,
         email: emptyState.settings.email,
