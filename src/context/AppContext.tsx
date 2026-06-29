@@ -30,21 +30,30 @@ export function usePortfolio(): {
 
   const coinMap = new Map(coins.map((c: Coin) => [c.id, c]));
 
-  const positionsMap = new Map<string, { holdings: number; invested: number; tradeCount: number }>();
+  const positionsMap = new Map<string, { holdings: number; costBasis: number }>();
 
   for (const trade of state.trades) {
+    if (!Number.isFinite(trade.amount) || trade.amount <= 0 || !Number.isFinite(trade.price)) {
+      continue;
+    }
     if (!positionsMap.has(trade.coinId)) {
-      positionsMap.set(trade.coinId, { holdings: 0, invested: 0, tradeCount: 0 });
+      positionsMap.set(trade.coinId, { holdings: 0, costBasis: 0 });
     }
     const pos = positionsMap.get(trade.coinId)!;
     if (trade.type === "buy") {
       pos.holdings += trade.amount;
-      pos.invested += trade.amount * trade.price;
-    } else {
-      pos.holdings -= trade.amount;
-      pos.invested -= trade.amount * trade.price;
+      pos.costBasis += trade.amount * trade.price;
+    } else if (pos.holdings > 0) {
+      const sellQuantity = Math.min(trade.amount, pos.holdings);
+      const averageCost = pos.costBasis / pos.holdings;
+      pos.holdings -= sellQuantity;
+      pos.costBasis -= sellQuantity * averageCost;
+
+      if (pos.holdings < 1e-10) {
+        pos.holdings = 0;
+        pos.costBasis = 0;
+      }
     }
-    pos.tradeCount++;
   }
 
   const positions: PortfolioPosition[] = [];
@@ -56,10 +65,10 @@ export function usePortfolio(): {
     const coin = coinMap.get(coinId);
     if (!coin) continue;
 
-    const avgPrice = pos.invested / pos.holdings;
+    const avgPrice = pos.costBasis / pos.holdings;
     const currentValue = pos.holdings * coin.price;
-    const pl = currentValue - pos.invested;
-    const plPercent = (pl / pos.invested) * 100;
+    const pl = currentValue - pos.costBasis;
+    const plPercent = pos.costBasis > 0 ? (pl / pos.costBasis) * 100 : 0;
 
     positions.push({
       coinId,
@@ -67,12 +76,12 @@ export function usePortfolio(): {
       avgPrice,
       currentPrice: coin.price,
       currentValue,
-      invested: pos.invested,
+      invested: pos.costBasis,
       pl,
       plPercent,
     });
 
-    totalInvested += pos.invested;
+    totalInvested += pos.costBasis;
     totalValue += currentValue;
   }
 

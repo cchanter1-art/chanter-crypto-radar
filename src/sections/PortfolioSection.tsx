@@ -5,16 +5,37 @@ import StatCard from "@/components/StatCard";
 import PortfolioTable from "@/components/PortfolioTable";
 import AddTradeModal from "@/components/AddTradeModal";
 import MarketPriceStatus from "@/components/MarketPriceStatus";
+import TradeHistoryTable from "@/components/TradeHistoryTable";
+import type { PaperTrade } from "@/types";
 
 export default function PortfolioSection() {
-  const { dispatch } = useAppState();
+  const { state, dispatch } = useAppState();
   const { positions, totalInvested, totalValue, totalPL, totalPLPercent } = usePortfolio();
   const [showModal, setShowModal] = useState(false);
 
   const isPositive = totalPL >= 0;
 
-  const handleAddTrade = (trade: import("@/types").PaperTrade) => {
+  const handleAddTrade = (trade: PaperTrade) => {
     dispatch({ type: "ADD_TRADE", payload: trade });
+  };
+
+  const handleDeleteTrade = (id: string) => {
+    dispatch({ type: "DELETE_TRADE", payload: id });
+  };
+
+  const handleClearTrades = () => {
+    if (window.confirm("Clear all browser-local paper trades?")) {
+      dispatch({ type: "CLEAR_TRADES" });
+    }
+  };
+
+  const handleRestoreTrades = () => {
+    if (
+      state.trades.length === 0 ||
+      window.confirm("Replace the current paper trade history with the sample trades?")
+    ) {
+      dispatch({ type: "RESTORE_SAMPLE_TRADES" });
+    }
   };
 
   return (
@@ -23,6 +44,9 @@ export default function PortfolioSection() {
         <h2 className="section-title mb-2">Paper Portfolio</h2>
         <p className="section-subtitle">
           Simulate trades and track performance without real capital
+        </p>
+        <p className="mt-2 text-xs" style={{ color: "#4b5563" }}>
+          Paper trades only. No real orders are placed.
         </p>
       </div>
 
@@ -72,6 +96,13 @@ export default function PortfolioSection() {
         <Plus size={14} />
         Add Trade
       </button>
+
+      <TradeHistoryTable
+        trades={state.trades}
+        onDelete={handleDeleteTrade}
+        onClear={handleClearTrades}
+        onRestore={handleRestoreTrades}
+      />
 
       {showModal && (
         <AddTradeModal

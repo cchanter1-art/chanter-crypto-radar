@@ -60,6 +60,8 @@ export type AppAction =
   | { type: "RESTORE_DEFAULT_WATCHLIST" }
   | { type: "ADD_TRADE"; payload: PaperTrade }
   | { type: "DELETE_TRADE"; payload: string }
+  | { type: "CLEAR_TRADES" }
+  | { type: "RESTORE_SAMPLE_TRADES" }
   | { type: "ADD_PRICE_ALERT"; payload: PriceAlert }
   | { type: "DELETE_PRICE_ALERT"; payload: string }
   | { type: "SET_PRICE_ALERT_ACTIVE"; payload: { id: string; isActive: boolean } }

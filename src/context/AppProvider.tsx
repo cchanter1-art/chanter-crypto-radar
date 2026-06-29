@@ -14,6 +14,7 @@ import {
   fetchCryptoPrices,
   type LiveCoinPrice,
 } from "@/lib/cryptoPriceService";
+import { getPaperHoldings, isValidPaperTrade } from "@/lib/paperTradeUtils";
 
 const STORAGE_KEYS = {
   watchlist: "chanter-watchlist",
@@ -95,10 +96,28 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, watchlist: [...DEFAULT_WATCHLIST] };
 
     case "ADD_TRADE":
+      if (
+        !isValidPaperTrade(action.payload) ||
+        state.trades.some((trade) => trade.id === action.payload.id)
+      ) {
+        return state;
+      }
+      if (
+        action.payload.type === "sell" &&
+        action.payload.amount > getPaperHoldings(state.trades, action.payload.coinId)
+      ) {
+        return state;
+      }
       return { ...state, trades: [...state.trades, action.payload] };
 
     case "DELETE_TRADE":
       return { ...state, trades: state.trades.filter((t) => t.id !== action.payload) };
+
+    case "CLEAR_TRADES":
+      return { ...state, trades: [] };
+
+    case "RESTORE_SAMPLE_TRADES":
+      return { ...state, trades: DEFAULT_TRADES.map((trade) => ({ ...trade })) };
 
     case "ADD_PRICE_ALERT":
       return { ...state, alerts: [...state.alerts, action.payload] };
