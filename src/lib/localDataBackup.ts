@@ -1,4 +1,9 @@
 import { DEFAULT_WATCHLIST } from "@/data/mockData";
+import {
+  isValidPaperSignal,
+  MAX_PAPER_SIGNAL_HISTORY,
+  type PaperSignal,
+} from "@/lib/paperSignalEngine";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -28,7 +33,13 @@ export interface LocalDataBackup {
   watchlist: string[];
   paperTrades: PaperTrade[];
   priceAlerts: PriceAlert[];
+  paperSignals: PaperSignal[];
   settings: AppSettings;
+}
+
+export interface ImportedLocalDataBackup {
+  state: AppState;
+  paperSignals: PaperSignal[];
 }
 
 type ValidationResult<T> =
@@ -171,6 +182,34 @@ function validatePriceAlerts(value: unknown): ValidationResult<PriceAlert[]> {
   return { ok: true, value: alerts };
 }
 
+function validatePaperSignals(value: unknown): ValidationResult<PaperSignal[]> {
+  if (value === undefined) {
+    return { ok: true, value: [] };
+  }
+
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "Backup paper signal history must be an array." };
+  }
+
+  const signalIds = new Set<string>();
+  const signals: PaperSignal[] = [];
+
+  for (const item of value) {
+    if (!isValidPaperSignal(item)) {
+      return { ok: false, message: "Backup contains an invalid paper signal." };
+    }
+
+    if (signalIds.has(item.id)) {
+      return { ok: false, message: "Backup contains duplicate paper signal ids." };
+    }
+
+    signalIds.add(item.id);
+    signals.push({ ...item });
+  }
+
+  return { ok: true, value: signals.slice(0, MAX_PAPER_SIGNAL_HISTORY) };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -205,7 +244,10 @@ export function createEmptyLocalAppState(): AppState {
   };
 }
 
-export function createLocalDataBackup(state: AppState): LocalDataBackup {
+export function createLocalDataBackup(
+  state: AppState,
+  paperSignals: PaperSignal[] = [],
+): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
     app: BACKUP_APP_NAME,
@@ -213,11 +255,17 @@ export function createLocalDataBackup(state: AppState): LocalDataBackup {
     watchlist: [...state.watchlist],
     paperTrades: state.trades.map((trade) => ({ ...trade })),
     priceAlerts: state.alerts.map((alert) => ({ ...alert })),
+    paperSignals: paperSignals
+      .filter(isValidPaperSignal)
+      .slice(0, MAX_PAPER_SIGNAL_HISTORY)
+      .map((signal) => ({ ...signal })),
     settings: { ...state.settings },
   };
 }
 
-export function parseLocalDataBackup(rawJson: string): ValidationResult<AppState> {
+export function parseLocalDataBackup(
+  rawJson: string,
+): ValidationResult<ImportedLocalDataBackup> {
   let parsed: unknown;
 
   try {
@@ -253,6 +301,11 @@ export function parseLocalDataBackup(rawJson: string): ValidationResult<AppState
     return { ok: false, message: `Import failed. ${alerts.message}` };
   }
 
+  const paperSignals = validatePaperSignals(parsed.paperSignals);
+  if (paperSignals.ok === false) {
+    return { ok: false, message: `Import failed. ${paperSignals.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -261,10 +314,13 @@ export function parseLocalDataBackup(rawJson: string): ValidationResult<AppState
   return {
     ok: true,
     value: {
-      watchlist: watchlist.value,
-      trades: trades.value,
-      alerts: alerts.value,
-      settings: settings.value,
+      state: {
+        watchlist: watchlist.value,
+        trades: trades.value,
+        alerts: alerts.value,
+        settings: settings.value,
+      },
+      paperSignals: paperSignals.value,
     },
   };
 }

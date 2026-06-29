@@ -28,6 +28,13 @@ export const PAPER_SIGNAL_STORAGE_KEY = "chanter-paper-signal-history";
 export const MAX_PAPER_SIGNAL_HISTORY = 50;
 
 const SUPPORTED_COIN_IDS = new Set(["btc", "eth", "sol", "ada", "avax"]);
+const SUPPORTED_SYMBOLS_BY_ID = new Map([
+  ["btc", "BTC"],
+  ["eth", "ETH"],
+  ["sol", "SOL"],
+  ["ada", "ADA"],
+  ["avax", "AVAX"],
+]);
 const SIGNAL_LABELS = new Set<PaperSignalLabel>(["BUY", "SELL", "HOLD", "AVOID"]);
 const CONFIDENCE_LEVELS = new Set<PaperSignalConfidence>(["Low", "Medium", "High"]);
 const ALERT_PROXIMITY_PERCENT = 2;
@@ -220,18 +227,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isValidStoredSignal(value: unknown): value is PaperSignal {
+export function isValidPaperSignal(value: unknown): value is PaperSignal {
   return isRecord(value) &&
     typeof value.id === "string" &&
+    value.id.trim() !== "" &&
     typeof value.coinId === "string" &&
     SUPPORTED_COIN_IDS.has(value.coinId) &&
     typeof value.symbol === "string" &&
+    value.symbol === SUPPORTED_SYMBOLS_BY_ID.get(value.coinId) &&
     typeof value.label === "string" &&
     SIGNAL_LABELS.has(value.label as PaperSignalLabel) &&
     typeof value.confidence === "string" &&
     CONFIDENCE_LEVELS.has(value.confidence as PaperSignalConfidence) &&
     typeof value.reason === "string" &&
+    value.reason.trim() !== "" &&
     typeof value.riskNote === "string" &&
+    value.riskNote.trim() !== "" &&
     typeof value.timestamp === "string" &&
     !Number.isNaN(Date.parse(value.timestamp));
 }
@@ -240,7 +251,7 @@ export function loadPaperSignalHistory(): PaperSignal[] {
   try {
     const stored = JSON.parse(localStorage.getItem(PAPER_SIGNAL_STORAGE_KEY) ?? "[]");
     if (!Array.isArray(stored)) return [];
-    return stored.filter(isValidStoredSignal).slice(0, MAX_PAPER_SIGNAL_HISTORY);
+    return stored.filter(isValidPaperSignal).slice(0, MAX_PAPER_SIGNAL_HISTORY);
   } catch {
     return [];
   }

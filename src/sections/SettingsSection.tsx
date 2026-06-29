@@ -7,7 +7,11 @@ import {
   createLocalDataBackup,
   parseLocalDataBackup,
 } from "@/lib/localDataBackup";
-import { clearPaperSignalHistory } from "@/lib/paperSignalEngine";
+import {
+  clearPaperSignalHistory,
+  loadPaperSignalHistory,
+  savePaperSignalHistory,
+} from "@/lib/paperSignalEngine";
 
 type DataStatus = {
   type: "success" | "error";
@@ -37,7 +41,7 @@ export default function SettingsSection() {
   };
 
   const handleExport = () => {
-    const backup = createLocalDataBackup(state);
+    const backup = createLocalDataBackup(state, loadPaperSignalHistory());
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -69,10 +73,18 @@ export default function SettingsSection() {
         return;
       }
 
-      dispatch({ type: "LOAD_STATE", payload: result.value });
+      if (!savePaperSignalHistory(result.value.paperSignals)) {
+        setDataStatus({
+          type: "error",
+          message: "Import failed. Paper signal history could not be saved in this browser.",
+        });
+        return;
+      }
+
+      dispatch({ type: "LOAD_STATE", payload: result.value.state });
       setFormData({
-        displayName: result.value.settings.displayName,
-        email: result.value.settings.email,
+        displayName: result.value.state.settings.displayName,
+        email: result.value.state.settings.email,
       });
       setDataStatus({ type: "success", message: "Local backup imported." });
     } catch {
@@ -221,7 +233,8 @@ export default function SettingsSection() {
               lineHeight: 1.6,
             }}
           >
-            Back up or restore your watchlist, paper trades, price alerts, and app settings.
+            Back up or restore your watchlist, paper trades, price alerts, paper signal history,
+            and app settings.
           </p>
           <p
             className="mb-5 text-xs"
