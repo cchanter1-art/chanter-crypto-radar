@@ -11,7 +11,12 @@ export default function ViewContainer({ children }: ViewContainerProps) {
   const isDashboard = location.pathname === "/";
 
   if (isDashboard) {
-    return <>{children}</>;
+    return (
+      <>
+        {children}
+        <Footer />
+      </>
+    );
   }
 
   return (

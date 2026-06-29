@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider } from "@/context/AppProvider";
-import { TranceTunnel } from "@/lib/TranceTunnel";
 import Navigation from "@/components/Navigation";
 import ViewContainer from "@/components/ViewContainer";
 import HeroSection from "@/sections/HeroSection";
@@ -11,6 +10,7 @@ import AnalyticsSection from "@/sections/AnalyticsSection";
 import SettingsSection from "@/sections/SettingsSection";
 import HelpSection from "@/sections/HelpSection";
 import MarketNotes from "@/components/MarketNotes";
+import type { TranceTunnel } from "@/lib/TranceTunnel";
 
 function AppContent() {
   const tunnelRef = useRef<TranceTunnel | null>(null);
@@ -18,16 +18,33 @@ function AppContent() {
   const location = useLocation();
 
   useEffect(() => {
+    let isActive = true;
+
     if (containerRef.current && !tunnelRef.current) {
-      tunnelRef.current = new TranceTunnel(containerRef.current, {
-        rings: 5,
-        tubes: 14,
-        speed: 1.0,
-        dieSpeed: 0.02,
-      });
+      const container = containerRef.current;
+
+      void import("@/lib/TranceTunnel")
+        .then(({ TranceTunnel: Tunnel }) => {
+          if (!isActive || tunnelRef.current) return;
+
+          try {
+            tunnelRef.current = new Tunnel(container, {
+              rings: 5,
+              tubes: 14,
+              speed: 1.0,
+              dieSpeed: 0.02,
+            });
+          } catch {
+            tunnelRef.current = null;
+          }
+        })
+        .catch(() => {
+          tunnelRef.current = null;
+        });
     }
 
     return () => {
+      isActive = false;
       if (tunnelRef.current) {
         tunnelRef.current.destroy();
         tunnelRef.current = null;

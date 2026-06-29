@@ -19,16 +19,17 @@ export default function Footer() {
           </span>
         </div>
 
-        <p
-          className="text-xs"
+        <div
+          className="text-center text-xs"
           style={{
             color: "#4b5563",
             fontFamily: "'DM Sans', sans-serif",
             fontWeight: 300,
           }}
         >
-          Crypto intelligence for everyone.
-        </p>
+          <p>For tracking only. Not financial advice.</p>
+          <p className="mt-1">No wallet connection. No real trades.</p>
+        </div>
 
         <div className="flex items-center gap-6">
           <Link

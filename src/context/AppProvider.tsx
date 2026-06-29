@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { AppContext, type AppContextType } from "@/context/AppContext";
-import type { AppState, AppAction, AppSettings, Coin, PriceAlert } from "@/types";
+import type { AppState, AppAction, AppSettings, Coin, PaperTrade, PriceAlert } from "@/types";
 import { DEFAULT_TRADES, DEFAULT_WATCHLIST, COINS } from "@/data/mockData";
 import {
   CryptoPriceServiceError,
@@ -31,10 +31,124 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const SUPPORTED_COIN_IDS = new Set(DEFAULT_WATCHLIST);
+const SUPPORTED_SYMBOLS_BY_ID = new Map(COINS.map((coin) => [coin.id, coin.symbol]));
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseStorageValue(raw: string | null): unknown {
+  if (!raw) return undefined;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function copyDefaultTrades(): PaperTrade[] {
+  return DEFAULT_TRADES.map((trade) => ({ ...trade }));
+}
 
 function normalizeWatchlist(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_WATCHLIST];
   return DEFAULT_WATCHLIST.filter((coinId) => value.includes(coinId));
+}
+
+function normalizeTrades(value: unknown): PaperTrade[] {
+  if (!Array.isArray(value)) return copyDefaultTrades();
+
+  const trades: PaperTrade[] = [];
+  const tradeIds = new Set<string>();
+
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+
+    const trade = item as unknown as PaperTrade;
+    if (!isValidPaperTrade(trade) || tradeIds.has(trade.id)) continue;
+
+    if (trade.type === "sell" && trade.amount > getPaperHoldings(trades, trade.coinId)) {
+      continue;
+    }
+
+    tradeIds.add(trade.id);
+    trades.push({ ...trade });
+  }
+
+  return trades;
+}
+
+function normalizeSettings(value: unknown): AppSettings {
+  if (!isRecord(value)) return { ...DEFAULT_SETTINGS };
+
+  return {
+    displayName: typeof value.displayName === "string" ? value.displayName : "",
+    email: typeof value.email === "string" ? value.email : "",
+    priceAlerts: typeof value.priceAlerts === "boolean"
+      ? value.priceAlerts
+      : DEFAULT_SETTINGS.priceAlerts,
+    autoRefresh: typeof value.autoRefresh === "boolean"
+      ? value.autoRefresh
+      : DEFAULT_SETTINGS.autoRefresh,
+  };
+}
+
+function isValidDateString(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function normalizeAlerts(value: unknown): PriceAlert[] {
+  if (!Array.isArray(value)) return [];
+
+  const alerts: PriceAlert[] = [];
+  const alertIds = new Set<string>();
+
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.coinId !== "string") continue;
+
+    const expectedSymbol = SUPPORTED_SYMBOLS_BY_ID.get(item.coinId);
+    const triggeredAt = item.triggeredAt;
+
+    if (
+      typeof item.id !== "string" ||
+      item.id.trim() === "" ||
+      !SUPPORTED_COIN_IDS.has(item.coinId) ||
+      !expectedSymbol ||
+      item.symbol !== expectedSymbol ||
+      (item.condition !== "above" && item.condition !== "below") ||
+      typeof item.targetPrice !== "number" ||
+      !Number.isFinite(item.targetPrice) ||
+      item.targetPrice <= 0 ||
+      typeof item.isActive !== "boolean" ||
+      typeof item.isTriggered !== "boolean" ||
+      !isValidDateString(item.createdAt) ||
+      (triggeredAt !== undefined && !isValidDateString(triggeredAt)) ||
+      alertIds.has(item.id)
+    ) {
+      continue;
+    }
+
+    const alert: PriceAlert = {
+      id: item.id,
+      coinId: item.coinId,
+      symbol: expectedSymbol,
+      condition: item.condition,
+      targetPrice: item.targetPrice,
+      isActive: item.isActive,
+      isTriggered: item.isTriggered,
+      createdAt: item.createdAt,
+    };
+
+    if (typeof triggeredAt === "string") {
+      alert.triggeredAt = triggeredAt;
+    }
+
+    alertIds.add(alert.id);
+    alerts.push(alert);
+  }
+
+  return alerts;
 }
 
 function loadState(): AppState {
@@ -45,26 +159,20 @@ function loadState(): AppState {
     const alertsRaw = localStorage.getItem(STORAGE_KEYS.alerts);
 
     const watchlist = watchlistRaw
-      ? normalizeWatchlist(JSON.parse(watchlistRaw))
+      ? normalizeWatchlist(parseStorageValue(watchlistRaw))
       : [...DEFAULT_WATCHLIST];
-    const trades = tradesRaw ? JSON.parse(tradesRaw) : DEFAULT_TRADES;
-    const settings = settingsRaw ? JSON.parse(settingsRaw) : DEFAULT_SETTINGS;
-    let alerts: PriceAlert[] = [];
-    if (alertsRaw) {
-      try {
-        const parsedAlerts: unknown = JSON.parse(alertsRaw);
-        alerts = Array.isArray(parsedAlerts) ? parsedAlerts as PriceAlert[] : [];
-      } catch {
-        alerts = [];
-      }
-    }
+    const trades = tradesRaw ? normalizeTrades(parseStorageValue(tradesRaw)) : copyDefaultTrades();
+    const settings = settingsRaw
+      ? normalizeSettings(parseStorageValue(settingsRaw))
+      : { ...DEFAULT_SETTINGS };
+    const alerts = alertsRaw ? normalizeAlerts(parseStorageValue(alertsRaw)) : [];
 
     return { watchlist, trades, settings, alerts };
   } catch {
     return {
       watchlist: [...DEFAULT_WATCHLIST],
-      trades: DEFAULT_TRADES,
-      settings: DEFAULT_SETTINGS,
+      trades: copyDefaultTrades(),
+      settings: { ...DEFAULT_SETTINGS },
       alerts: [],
     };
   }
