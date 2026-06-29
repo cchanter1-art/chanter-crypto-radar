@@ -1,0 +1,21 @@
+import PerformanceChart from "@/components/PerformanceChart";
+import DonutChart from "@/components/DonutChart";
+import MetricsList from "@/components/MetricsList";
+
+export default function AnalyticsSection() {
+  return (
+    <div>
+      <div className="mb-8">
+        <h2 className="section-title mb-2">Analytics</h2>
+        <p className="section-subtitle">Deep insights into your portfolio performance</p>
+      </div>
+
+      <PerformanceChart />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+        <DonutChart />
+        <MetricsList />
+      </div>
+    </div>
+  );
+}
