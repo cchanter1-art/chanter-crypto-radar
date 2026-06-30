@@ -39,7 +39,7 @@ import {
 } from "@/lib/forwardTestSession";
 import { loadLatestSignalQualityScore } from "@/lib/signalQualityScore";
 import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
-import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive } from "@/lib/autoIntelligenceCycle";
+import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive, getLatestAutoObservation } from "@/lib/autoIntelligenceCycle";
 import {
   loadPaperRiskJournal,
   loadPaperRiskSettings,
@@ -241,6 +241,7 @@ function createLocalSnapshot() {
     latestIntegrity: loadLatestMarketDataIntegrity(),
     autoCycleState: getAutoIntelligenceCycleState(),
     autoCycleActive: isAutoIntelligenceCycleActive(),
+    latestAutoObs: getLatestAutoObservation(),
     futuresHistory: loadFuturesPaperHistory(),
     futuresPositions: loadFuturesPaperPositions(),
     futuresSettings: loadFuturesPaperSettings(),
@@ -751,7 +752,7 @@ export default function CommandCenterDashboard() {
             icon={<Zap size={17} />}
             badge={localSnapshot.autoCycleActive ? "Running" : localSnapshot.autoCycleState.lastStatus === "passed" ? "Last passed" : localSnapshot.autoCycleState.lastStatus === "failed" ? "Last failed" : "Off"}
           >
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
               <Metric
                 label="Status"
                 value={localSnapshot.autoCycleActive ? "Running" : localSnapshot.autoCycleState.enabled ? "Enabled" : "Off"}
@@ -770,7 +771,17 @@ export default function CommandCenterDashboard() {
               <Metric
                 label="Symbols"
                 value={localSnapshot.autoCycleState.symbolsScanned > 0 ? `${localSnapshot.autoCycleState.symbolsSucceeded}/${localSnapshot.autoCycleState.symbolsScanned} ok` : "N/A"}
-                detail={localSnapshot.autoCycleState.observationsCreated > 0 ? `${localSnapshot.autoCycleState.observationsCreated} observations` : localSnapshot.autoCycleState.symbolsFailed > 0 ? `${localSnapshot.autoCycleState.symbolsFailed} failed` : ""}
+                detail={localSnapshot.autoCycleState.symbolsFailed > 0 ? `${localSnapshot.autoCycleState.symbolsFailed} failed` : ""}
+              />
+              <Metric
+                label="Observations"
+                value={localSnapshot.autoCycleState.observationsCreated > 0 ? `${localSnapshot.autoCycleState.observationsCreated} created` : "0"}
+                detail={localSnapshot.autoCycleState.observationsSkipped > 0 ? `${localSnapshot.autoCycleState.observationsSkipped} skipped` : ""}
+              />
+              <Metric
+                label="Latest observed"
+                value={localSnapshot.latestAutoObs ? localSnapshot.latestAutoObs.symbol : "N/A"}
+                detail={localSnapshot.latestAutoObs ? `${localSnapshot.latestAutoObs.freshnessStatus} / ${localSnapshot.latestAutoObs.readinessStatus.replace(/_/g, " ")}` : "No observations yet"}
               />
             </div>
             {(() => {

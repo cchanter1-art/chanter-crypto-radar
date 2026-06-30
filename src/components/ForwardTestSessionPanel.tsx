@@ -14,6 +14,12 @@ import {
 } from "@/lib/futuresPaperEngine";
 import { loadPaperRiskSettings } from "@/lib/paperRiskController";
 import {
+  getAutoIntelligenceCycleState,
+  getLatestAutoObservation,
+  getAutoObservations,
+  type AutoObservationRecord,
+} from "@/lib/autoIntelligenceCycle";
+import {
   DEFAULT_FORWARD_TEST_CONFIG,
   FORWARD_TEST_PROFILES,
   MAX_FORWARD_TEST_COMPLETED_SESSIONS,
@@ -95,6 +101,10 @@ export default function ForwardTestSessionPanel() {
     () => data.activeSession?.id ?? data.completedSessions[0]?.id ?? null,
   );
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  // Refresh auto observations when component mounts or when data changes
+  const autoObsState = getAutoIntelligenceCycleState();
+  const latestAutoObs = getLatestAutoObservation();
+  const recentAutoObs = getAutoObservations(10);
 
   const selectedSession = (
     data.activeSession?.id === selectedSessionId
@@ -356,6 +366,112 @@ export default function ForwardTestSessionPanel() {
           <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Start a browser-local session, then add each observation manually.</p>
         </div>
       )}
+
+      {/* Auto Observations - Read-only bridge from Auto Intelligence Cycle */}
+      <div
+        className="mt-6 rounded-lg p-4"
+        style={{
+          backgroundColor: "rgba(201,215,227,0.02)",
+          border: "1px solid rgba(201,215,227,0.06)",
+        }}
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Activity size={14} style={{ color: "#cc9258" }} />
+            <h4 className="text-xs font-medium uppercase tracking-[0.08em]" style={{ color: "#9ca3af" }}>
+              Auto Observations
+            </h4>
+          </div>
+          <span
+            className="rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.06em]"
+            style={{
+              color: "#9ca3af",
+              border: "1px solid rgba(156,163,175,0.18)",
+            }}
+          >
+            AUTO_CYCLE - OBSERVATION_ONLY
+          </span>
+        </div>
+
+        <p className="text-[10px] leading-4" style={{ color: "#6b7280" }}>
+          Observation only. No trades. No paper positions. Read-only bridge from Auto Intelligence Cycle.
+        </p>
+
+        {recentAutoObs.length > 0 ? (
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.08em]" style={{ color: "#4b5563" }}>Total</p>
+                <p className="data-mono mt-1 text-sm" style={{ color: "#c9d7e3" }}>{autoObsState.autoObservations.length}</p>
+              </div>
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.08em]" style={{ color: "#4b5563" }}>Created (last tick)</p>
+                <p className="data-mono mt-1 text-sm" style={{ color: "#c9d7e3" }}>{autoObsState.observationsCreated}</p>
+              </div>
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.08em]" style={{ color: "#4b5563" }}>Skipped (last tick)</p>
+                <p className="data-mono mt-1 text-sm" style={{ color: "#c9d7e3" }}>{autoObsState.observationsSkipped}</p>
+              </div>
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.08em]" style={{ color: "#4b5563" }}>Latest symbol</p>
+                <p className="data-mono mt-1 text-sm" style={{ color: "#c9d7e3" }}>{latestAutoObs?.symbol ?? "N/A"}</p>
+              </div>
+            </div>
+
+            {latestAutoObs && (
+              <div className="mt-3 rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium" style={{ color: "#9ca3af" }}>{latestAutoObs.symbol}</span>
+                  <span className="data-mono text-[10px]" style={{ color: "#4b5563" }}>{formatTimestamp(latestAutoObs.timestamp)}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] sm:grid-cols-4">
+                  <div><span style={{ color: "#4b5563" }}>Score:</span> <span className="data-mono" style={{ color: "#9ca3af" }}>{latestAutoObs.integrityScore}/100</span></div>
+                  <div><span style={{ color: "#4b5563" }}>Freshness:</span> <span style={{ color: "#9ca3af" }}>{latestAutoObs.freshnessStatus}</span></div>
+                  <div><span style={{ color: "#4b5563" }}>Readiness:</span> <span style={{ color: "#9ca3af" }}>{latestAutoObs.readinessStatus.replace(/_/g, " ")}</span></div>
+                  <div><span style={{ color: "#4b5563" }}>Source:</span> <span style={{ color: "#9ca3af" }}>{latestAutoObs.sourceLabel}</span></div>
+                </div>
+              </div>
+            )}
+
+            <details className="mt-3">
+              <summary className="cursor-pointer text-[10px]" style={{ color: "#6b7280" }}>
+                Recent auto observations ({Math.min(recentAutoObs.length, 10)})
+              </summary>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-left" style={{ borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid rgba(201,215,227,0.06)" }}>
+                      <th className="px-2 py-2 text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Symbol</th>
+                      <th className="px-2 py-2 text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Score</th>
+                      <th className="px-2 py-2 text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Freshness</th>
+                      <th className="px-2 py-2 text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Readiness</th>
+                      <th className="px-2 py-2 text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Source</th>
+                      <th className="px-2 py-2 text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentAutoObs.map((obs: AutoObservationRecord) => (
+                      <tr key={obs.id} style={{ borderBottom: "1px solid rgba(201,215,227,0.03)" }}>
+                        <td className="px-2 py-2 data-mono text-[10px]" style={{ color: "#9ca3af" }}>{obs.symbol}</td>
+                        <td className="px-2 py-2 data-mono text-[10px]" style={{ color: obs.integrityScore >= 85 ? "#22c55e" : obs.integrityScore >= 50 ? "#f59e0b" : "#ef4444" }}>{obs.integrityScore}</td>
+                        <td className="px-2 py-2 text-[10px]" style={{ color: "#9ca3af" }}>{obs.freshnessStatus}</td>
+                        <td className="px-2 py-2 text-[10px]" style={{ color: "#9ca3af" }}>{obs.readinessStatus.replace(/_/g, " ")}</td>
+                        <td className="px-2 py-2 text-[10px]" style={{ color: "#9ca3af" }}>{obs.sourceLabel}</td>
+                        <td className="px-2 py-2 data-mono text-[10px]" style={{ color: "#4b5563" }}>{formatTimestamp(obs.timestamp)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
+        ) : (
+          <div className="mt-3 rounded-md p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.08)" }}>
+            <p className="text-xs" style={{ color: "#6b7280" }}>No auto observations yet.</p>
+            <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>Start the Auto Intelligence Cycle from Analytics to generate read-only observations.</p>
+          </div>
+        )}
+      </div>
 
       {data.completedSessions.length > 0 && (
         <details className="mt-6" style={{ borderTop: "1px solid rgba(201,215,227,0.05)", paddingTop: 16 }}>

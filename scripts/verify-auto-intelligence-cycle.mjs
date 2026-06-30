@@ -124,6 +124,39 @@ try {
     seenKeys.add(key);
   }
 
+  // 7c. v2 field validation: source and fetchedAt
+  for (const obs of tickState2.autoObservations) {
+    assert.equal(obs.source, "AUTO_CYCLE", "Observation source must be AUTO_CYCLE");
+    assert.ok(obs.fetchedAt, "Observation must have fetchedAt");
+    assert.ok(!Number.isNaN(Date.parse(obs.fetchedAt)), "fetchedAt must be valid date");
+    assert.equal(typeof obs.integrityScore, "number", "integrityScore must be number");
+    assert.ok(obs.integrityScore >= 0 && obs.integrityScore <= 100, "integrityScore in range");
+    assert.ok(obs.sourceLabel, "Observation must have sourceLabel");
+    assert.ok(obs.freshnessStatus, "Observation must have freshnessStatus");
+    assert.ok(obs.readinessStatus, "Observation must have readinessStatus");
+    assert.equal(obs.direction, "WAIT", "v1 direction must be WAIT");
+    assert.ok(obs.confidence === "High" || obs.confidence === "Medium" || obs.confidence === "Low", "confidence must be valid");
+    assert.ok(obs.reason, "Observation must have reason");
+  }
+
+  // 7d. Helper functions
+  const latestObs = cycle.getLatestAutoObservation();
+  assert.ok(latestObs, "getLatestAutoObservation must return a record");
+  assert.equal(latestObs.status, "OBSERVATION_ONLY");
+
+  const obsList = cycle.getAutoObservations(5);
+  assert.ok(Array.isArray(obsList), "getAutoObservations must return array");
+  assert.ok(obsList.length <= 5, "getAutoObservations must respect limit");
+  assert.ok(obsList.length > 0, "Should have observations after successful tick");
+
+  // 7e. No trade/position/order fields on observations
+  for (const obs of tickState2.autoObservations) {
+    assert.equal(obs.tradeId, undefined, "Observation must not have tradeId");
+    assert.equal(obs.positionId, undefined, "Observation must not have positionId");
+    assert.equal(obs.orderId, undefined, "Observation must not have orderId");
+    assert.equal(obs.execution, undefined, "Observation must not have execution field");
+  }
+
   // 9. Failed fetch records error with symbol counts
   globalThis.fetch = async () => ({
     ok: false, status: 451, statusText: "Unavailable",
@@ -330,6 +363,101 @@ try {
   const backupBad = { ...backup, autoIntelligenceCycleState: { enabled: "yes" } };
   assert.equal(backupApi.parseLocalDataBackup(JSON.stringify(backupBad)).ok, false, "Invalid auto cycle must reject");
 
+  // 17b. Cap at max observations (550 input must cap at 500)
+  {
+    const state = cycle.getAutoIntelligenceCycleState();
+    const fakeObs = [];
+    for (let i = 0; i < 550; i++) {
+      fakeObs.push({
+        id: "cap-test-" + i,
+        timestamp: new Date(Date.now() - i * 60000).toISOString(),
+        symbol: "BTCUSDT",
+        source: "AUTO_CYCLE",
+        fetchedAt: new Date(Date.now() - i * 60000).toISOString(),
+        integrityScore: 75,
+        sourceLabel: "LIVE_READ_ONLY",
+        freshnessStatus: "current",
+        readinessStatus: "ready",
+        direction: "WAIT",
+        confidence: "Medium",
+        reason: "Cap test observation",
+        status: "OBSERVATION_ONLY",
+      });
+    }
+    const overCapState = { ...state, autoObservations: fakeObs };
+    store.set("chanter-auto-intelligence-cycle", JSON.stringify(overCapState));
+    const cappedState = cycle.getAutoIntelligenceCycleState();
+    assert.ok(cappedState.autoObservations.length <= 500, "Auto observations must cap at 500");
+  }
+
+  // 17c. Export includes auto observation history
+  {
+    store.clear();
+    const fetchOrig = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      if (typeof url === "string" && url.includes("api.binance.com")) {
+        const candles = [];
+        const baseTime = Date.now();
+        for (let i = 99; i >= 0; i--) {
+          const openTime = baseTime - i * 900000;
+          const price = 50000 + i * 10;
+          candles.push([openTime, String(price), String(price + 100), String(price - 50), String(price + 50), String(100), openTime + 899999]);
+        }
+        return { ok: true, json: async () => candles };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+
+    await cycle.runAutoIntelligenceTick();
+    const obsState = cycle.getAutoIntelligenceCycleState();
+    assert.ok(obsState.autoObservations.length > 0, "Must have observations for export test");
+
+    const raw = store.get("chanter-auto-intelligence-cycle");
+    const parsed = JSON.parse(raw);
+    assert.ok(Array.isArray(parsed.autoObservations), "Exported data must include autoObservations array");
+    assert.ok(parsed.observationsCreated !== undefined, "Exported data must include observationsCreated");
+    assert.ok(parsed.observationsSkipped !== undefined, "Exported data must include observationsSkipped");
+
+    globalThis.fetch = fetchOrig;
+  }
+
+  // 17d. Legacy import without auto observations still works
+  {
+    const legacyState = {
+      enabled: false,
+      intervalMs: 900000,
+      lastRunAt: null,
+      lastStatus: null,
+      lastTickStartedAt: null,
+      lastTickCompletedAt: null,
+      nextRunAt: null,
+      lastSymbol: null,
+      lastScore: null,
+      lastReadiness: null,
+      lastSource: null,
+      lastError: null,
+      symbolsScanned: 0,
+      symbolsSucceeded: 0,
+      symbolsFailed: 0,
+      history: [],
+    };
+    store.set("chanter-auto-intelligence-cycle", JSON.stringify(legacyState));
+    const loaded = cycle.getAutoIntelligenceCycleState();
+    assert.equal(loaded.autoObservations.length, 0, "Legacy import must default autoObservations to empty");
+    assert.equal(loaded.observationsCreated, 0, "Legacy import must default observationsCreated to 0");
+    assert.equal(loaded.observationsSkipped, 0, "Legacy import must default observationsSkipped to 0");
+  }
+
+  // 17e. Empty history reader handles null gracefully
+  {
+    store.clear();
+    const emptyLatest = cycle.getLatestAutoObservation();
+    assert.equal(emptyLatest, null, "getLatestAutoObservation must return null when no observations");
+    const emptyList = cycle.getAutoObservations(10);
+    assert.ok(Array.isArray(emptyList), "getAutoObservations must return array even when empty");
+    assert.equal(emptyList.length, 0, "getAutoObservations must return empty array when no observations");
+  }
+
   // 18. No execution functions in module
   assert.equal(typeof cycle.startAutoIntelligenceCycle, "function");
   assert.equal(typeof cycle.stopAutoIntelligenceCycle, "function");
@@ -342,9 +470,11 @@ try {
   assert.equal(cycle.openPosition, undefined);
 
   console.log(
-    "Auto Intelligence Cycle v1.1 verification passed: start/stop, duplicate prevention, tick lock, " +
+    "Auto Intelligence Cycle v2 verification passed: start/stop, duplicate prevention, tick lock, " +
     "mocked fetch success/failure/partial, no positions opened, no trades created, observation creation, " +
-    "dedup verification, stale detection, symbol counts, tick timestamps, backup validation, backward compatibility, and safety verification.",
+    "v2 field validation (source/fetchedAt), helper functions, dedup verification, cap at 500, " +
+    "export includes observations, legacy import compat, empty history reader, stale detection, " +
+    "symbol counts, tick timestamps, backup validation, backward compatibility, and safety verification.",
   );
 } finally {
   await server.close();

@@ -38,6 +38,8 @@ export interface AutoObservationRecord {
   id: string;
   timestamp: string;
   symbol: string;
+  source: "AUTO_CYCLE";
+  fetchedAt: string;
   integrityScore: number;
   sourceLabel: string;
   freshnessStatus: string;
@@ -156,6 +158,8 @@ function isAutoObservationRecord(value: unknown): value is AutoObservationRecord
   if (typeof r.confidence !== "string") return false;
   if (typeof r.reason !== "string") return false;
   if (r.status !== "OBSERVATION_ONLY") return false;
+  if (r.source !== "AUTO_CYCLE") return false;
+  if (!isValidDateString(r.fetchedAt)) return false;
   return true;
 }
 
@@ -360,6 +364,8 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
           id: obsId,
           timestamp: result.fetchedAt,
           symbol,
+          source: "AUTO_CYCLE",
+          fetchedAt: result.fetchedAt,
           integrityScore: report.integrityScore,
           sourceLabel: report.source,
           freshnessStatus: report.freshnessStatus,
@@ -459,6 +465,16 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
   } finally {
     tickLock = false;
   }
+}
+
+export function getLatestAutoObservation(): AutoObservationRecord | null {
+  const state = getAutoIntelligenceCycleState();
+  return state.autoObservations.length > 0 ? state.autoObservations[0] : null;
+}
+
+export function getAutoObservations(limit: number = 10): AutoObservationRecord[] {
+  const state = getAutoIntelligenceCycleState();
+  return state.autoObservations.slice(0, limit);
 }
 
 export function clearAutoIntelligenceCycleHistory(): boolean {
