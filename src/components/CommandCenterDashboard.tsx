@@ -39,7 +39,7 @@ import {
 } from "@/lib/forwardTestSession";
 import { loadLatestSignalQualityScore } from "@/lib/signalQualityScore";
 import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
-import { getAutoIntelligenceCycleState, isAutoIntelligenceCycleActive } from "@/lib/autoIntelligenceCycle";
+import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive } from "@/lib/autoIntelligenceCycle";
 import {
   loadPaperRiskJournal,
   loadPaperRiskSettings,
@@ -751,23 +751,40 @@ export default function CommandCenterDashboard() {
             icon={<Zap size={17} />}
             badge={localSnapshot.autoCycleActive ? "Running" : localSnapshot.autoCycleState.lastStatus === "passed" ? "Last passed" : localSnapshot.autoCycleState.lastStatus === "failed" ? "Last failed" : "Off"}
           >
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Metric
                 label="Status"
                 value={localSnapshot.autoCycleActive ? "Running" : localSnapshot.autoCycleState.enabled ? "Enabled" : "Off"}
                 detail={localSnapshot.autoCycleState.lastStatus ? `Last: ${localSnapshot.autoCycleState.lastStatus}` : "No runs yet"}
               />
               <Metric
-                label="Last run"
-                value={localSnapshot.autoCycleState.lastRunAt ? formatTimestamp(localSnapshot.autoCycleState.lastRunAt) : "Never"}
-                detail={localSnapshot.autoCycleState.lastSymbol ? localSnapshot.autoCycleState.lastSymbol : ""}
+                label="Last completed"
+                value={localSnapshot.autoCycleState.lastTickCompletedAt ? formatTimestamp(localSnapshot.autoCycleState.lastTickCompletedAt) : "Never"}
+                detail={localSnapshot.autoCycleState.nextRunAt ? `Next: ${formatTimestamp(localSnapshot.autoCycleState.nextRunAt)}` : ""}
               />
               <Metric
                 label="Last score"
                 value={localSnapshot.autoCycleState.lastScore !== null ? `${localSnapshot.autoCycleState.lastScore}/100` : "N/A"}
                 detail={localSnapshot.autoCycleState.lastReadiness ? localSnapshot.autoCycleState.lastReadiness.replace(/_/g, " ") : ""}
               />
+              <Metric
+                label="Symbols"
+                value={localSnapshot.autoCycleState.symbolsScanned > 0 ? `${localSnapshot.autoCycleState.symbolsSucceeded}/${localSnapshot.autoCycleState.symbolsScanned} ok` : "N/A"}
+                detail={localSnapshot.autoCycleState.symbolsFailed > 0 ? `${localSnapshot.autoCycleState.symbolsFailed} failed` : ""}
+              />
             </div>
+            {(() => {
+              const w = getStaleWarning(localSnapshot.autoCycleState);
+              if (!w) return null;
+              return (
+                <div className="mt-3 rounded-lg p-3" style={{ background: "rgba(245, 158, 11, 0.06)", border: "1px solid rgba(245, 158, 11, 0.16)" }}>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle size={14} style={{ color: "#f59e0b" }} className="mt-0.5 shrink-0" />
+                    <p className="text-xs leading-5" style={{ color: "#a78b63" }}>{w}</p>
+                  </div>
+                </div>
+              );
+            })()}
             {localSnapshot.autoCycleState.lastError && (
               <p className="mt-3 text-xs" style={{ color: "#a78b63" }}>
                 {localSnapshot.autoCycleState.lastError}
@@ -779,7 +796,7 @@ export default function CommandCenterDashboard() {
             </div>
           </SectionCard>
 
-          <SectionCard
+<SectionCard
             id="system-health-title"
             title="System Health"
             subtitle="Local runtime and data-source visibility"

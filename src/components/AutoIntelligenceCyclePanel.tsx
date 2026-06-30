@@ -3,7 +3,9 @@ import { AlertTriangle, Play, RotateCcw, Square, Zap } from "lucide-react";
 import {
   clearAutoIntelligenceCycleHistory,
   getAutoIntelligenceCycleState,
+  getStaleWarning,
   isAutoIntelligenceCycleActive,
+  isTickRunning,
   runAutoIntelligenceTick,
   startAutoIntelligenceCycle,
   stopAutoIntelligenceCycle,
@@ -17,8 +19,15 @@ function formatTimestamp(value: string | null): string {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(d);
 }
 
-function statusLabel(state: AutoIntelligenceCycleState, active: boolean): string {
-  if (active && state.lastStatus === "running") return "Running tick...";
+function formatDuration(ms: number): string {
+  if (ms < 60000) return `${Math.round(ms / 1000)}s`;
+  const min = Math.floor(ms / 60000);
+  const sec = Math.round((ms % 60000) / 1000);
+  return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+}
+
+function statusLabel(state: AutoIntelligenceCycleState, active: boolean, tickRunning: boolean): string {
+  if (tickRunning) return "Running tick...";
   if (active) return "Running";
   if (state.enabled && !active) return "Enabled (click Start to resume)";
   if (state.lastStatus === "passed") return "Last run passed";
@@ -26,7 +35,8 @@ function statusLabel(state: AutoIntelligenceCycleState, active: boolean): string
   return "Off";
 }
 
-function statusColor(state: AutoIntelligenceCycleState, active: boolean): string {
+function statusColor(state: AutoIntelligenceCycleState, active: boolean, tickRunning: boolean): string {
+  if (tickRunning) return "#22c55e";
   if (active) return "#22c55e";
   if (state.lastStatus === "failed") return "#ef4444";
   if (state.lastStatus === "passed") return "#84cc16";
@@ -36,6 +46,7 @@ function statusColor(state: AutoIntelligenceCycleState, active: boolean): string
 export default function AutoIntelligenceCyclePanel() {
   const [state, setState] = useState<AutoIntelligenceCycleState>(() => getAutoIntelligenceCycleState());
   const [active, setActive] = useState<boolean>(() => isAutoIntelligenceCycleActive());
+  const [tickRunning, setTickRunning] = useState<boolean>(() => isTickRunning());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,8 +54,9 @@ export default function AutoIntelligenceCyclePanel() {
     const poll = () => {
       setState(getAutoIntelligenceCycleState());
       setActive(isAutoIntelligenceCycleActive());
+      setTickRunning(isTickRunning());
     };
-    const id = setInterval(poll, 3000);
+    const id = setInterval(poll, 2000);
     return () => clearInterval(id);
   }, []);
 
@@ -83,9 +95,20 @@ export default function AutoIntelligenceCyclePanel() {
     setState(getAutoIntelligenceCycleState());
   };
 
-  const label = statusLabel(state, active);
-  const color = statusColor(state, active);
+  const label = statusLabel(state, active, tickRunning);
+  const color = statusColor(state, active, tickRunning);
   const intervalMin = Math.round(state.intervalMs / 60000);
+  const staleWarning = getStaleWarning(state);
+
+  // Calculate tick duration if available
+  let tickDuration: string | null = null;
+  if (state.lastTickStartedAt && state.lastTickCompletedAt) {
+    const startMs = Date.parse(state.lastTickStartedAt);
+    const endMs = Date.parse(state.lastTickCompletedAt);
+    if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs >= startMs) {
+      tickDuration = formatDuration(endMs - startMs);
+    }
+  }
 
   return (
     <div
@@ -142,15 +165,26 @@ export default function AutoIntelligenceCyclePanel() {
         </div>
       </div>
 
-      {/* Metrics */}
-      <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Stale warning */}
+      {staleWarning && (
+        <div className="mb-4 rounded-lg p-3" style={{ background: "rgba(245, 158, 11, 0.06)", border: "1px solid rgba(245, 158, 11, 0.16)" }}>
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={14} style={{ color: "#f59e0b" }} className="mt-0.5 shrink-0" />
+            <p className="text-xs leading-5" style={{ color: "#a78b63" }}>{staleWarning}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Metrics row 1 */}
+      <div className="mb-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
           <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Interval</p>
           <p className="mt-1.5 text-sm font-medium" style={{ color: "#d1d5db" }}>{intervalMin} min</p>
         </div>
         <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
-          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Last Run</p>
-          <p className="mt-1.5 text-sm font-medium" style={{ color: "#d1d5db" }}>{formatTimestamp(state.lastRunAt)}</p>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Last Completed</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: "#d1d5db" }}>{formatTimestamp(state.lastTickCompletedAt)}</p>
+          {tickDuration && <p className="mt-0.5 text-[10px]" style={{ color: "#5f6977" }}>Duration: {tickDuration}</p>}
         </div>
         <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
           <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Last Score</p>
@@ -159,20 +193,30 @@ export default function AutoIntelligenceCyclePanel() {
           </p>
         </div>
         <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
-          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Readiness</p>
-          <p className="mt-1.5 text-sm font-medium" style={{ color: "#d1d5db" }}>{state.lastReadiness?.replace(/_/g, " ") ?? "N/A"}</p>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Next Run</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: active ? "#d1d5db" : "#6b7280" }}>
+            {state.nextRunAt ? formatTimestamp(state.nextRunAt) : "N/A"}
+          </p>
         </div>
       </div>
 
-      {/* Source and symbol */}
-      <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Metrics row 2: symbols + source */}
+      <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
-          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Source</p>
-          <p className="mt-1.5 text-xs" style={{ color: "#9ca3af" }}>{state.lastSource?.replace(/_/g, " ") ?? "Not run yet"}</p>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Symbols Scanned</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: "#d1d5db" }}>{state.symbolsScanned}</p>
         </div>
         <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
-          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Last Symbol</p>
-          <p className="mt-1.5 text-xs" style={{ color: "#9ca3af" }}>{state.lastSymbol ?? "Not run yet"}</p>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Succeeded</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: state.symbolsSucceeded > 0 ? "#22c55e" : "#6b7280" }}>{state.symbolsSucceeded}</p>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Failed</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: state.symbolsFailed > 0 ? "#ef4444" : "#6b7280" }}>{state.symbolsFailed}</p>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Source</p>
+          <p className="mt-1.5 text-xs" style={{ color: "#9ca3af" }}>{state.lastSource?.replace(/_/g, " ") ?? "N/A"}</p>
         </div>
       </div>
 
@@ -217,11 +261,11 @@ export default function AutoIntelligenceCyclePanel() {
         )}
         <button
           onClick={handleRunNow}
-          disabled={loading}
+          disabled={loading || tickRunning}
           className="rounded-lg px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
           style={{ background: "rgba(204, 146, 88, 0.12)", border: "1px solid rgba(204, 146, 88, 0.3)", color: "#cc9258" }}
         >
-          <RotateCcw size={14} /> {loading ? "Running..." : "Run now"}
+          <RotateCcw size={14} /> {loading || tickRunning ? "Running..." : "Run now"}
         </button>
         <button
           onClick={handleClear}

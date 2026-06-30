@@ -1,5 +1,5 @@
 /**
- * Auto Intelligence Cycle v1
+ * Auto Intelligence Cycle v1.1
  *
  * Browser-local 15-minute intelligence cycle.
  * Fetches live read-only 15m candles, runs integrity checks,
@@ -39,17 +39,24 @@ export interface AutoIntelligenceCycleState {
   intervalMs: number;
   lastRunAt: string | null;
   lastStatus: AutoCycleStatus | null;
+  lastTickStartedAt: string | null;
+  lastTickCompletedAt: string | null;
+  nextRunAt: string | null;
   lastSymbol: string | null;
   lastScore: number | null;
   lastReadiness: string | null;
   lastSource: string | null;
   lastError: string | null;
+  symbolsScanned: number;
+  symbolsSucceeded: number;
+  symbolsFailed: number;
   history: AutoIntelligenceCycleRunRecord[];
 }
 
 export const AUTO_INTELLIGENCE_CYCLE_STORAGE_KEY = "chanter-auto-intelligence-cycle";
 export const DEFAULT_CYCLE_INTERVAL_MS = 15 * 60 * 1000;
 export const MAX_CYCLE_HISTORY = 50;
+export const STALE_THRESHOLD_MS = 20 * 60 * 1000;
 
 const TRACKED_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT"] as const;
 
@@ -62,11 +69,17 @@ function getDefaultState(): AutoIntelligenceCycleState {
     intervalMs: DEFAULT_CYCLE_INTERVAL_MS,
     lastRunAt: null,
     lastStatus: null,
+    lastTickStartedAt: null,
+    lastTickCompletedAt: null,
+    nextRunAt: null,
     lastSymbol: null,
     lastScore: null,
     lastReadiness: null,
     lastSource: null,
     lastError: null,
+    symbolsScanned: 0,
+    symbolsSucceeded: 0,
+    symbolsFailed: 0,
     history: [],
   };
 }
@@ -118,12 +131,21 @@ export function normalizeAutoIntelligenceCycleState(
   if (typeof intervalMs !== "number" || !Number.isFinite(intervalMs) || intervalMs <= 0) return null;
   if (v.lastRunAt !== null && !isValidDateString(v.lastRunAt)) return null;
   if (v.lastStatus !== null && !isAutoCycleStatus(v.lastStatus)) return null;
+  if (v.lastTickStartedAt !== null && !isValidDateString(v.lastTickStartedAt)) return null;
+  if (v.lastTickCompletedAt !== null && !isValidDateString(v.lastTickCompletedAt)) return null;
+  if (v.nextRunAt !== null && !isValidDateString(v.nextRunAt)) return null;
   if (v.lastSymbol !== null && typeof v.lastSymbol !== "string") return null;
   const lastScore = v.lastScore;
   if (lastScore !== null && (!isFiniteNumber(lastScore) || lastScore < 0 || lastScore > 100)) return null;
   if (v.lastReadiness !== null && typeof v.lastReadiness !== "string") return null;
   if (v.lastSource !== null && typeof v.lastSource !== "string") return null;
   if (v.lastError !== null && typeof v.lastError !== "string") return null;
+  const symbolsScanned = v.symbolsScanned;
+  if (typeof symbolsScanned !== "number" || !Number.isFinite(symbolsScanned) || symbolsScanned < 0) return null;
+  const symbolsSucceeded = v.symbolsSucceeded;
+  if (typeof symbolsSucceeded !== "number" || !Number.isFinite(symbolsSucceeded) || symbolsSucceeded < 0) return null;
+  const symbolsFailed = v.symbolsFailed;
+  if (typeof symbolsFailed !== "number" || !Number.isFinite(symbolsFailed) || symbolsFailed < 0) return null;
   if (!Array.isArray(v.history)) return null;
   const history = v.history.map(normalizeRunRecord).filter(
     (r): r is AutoIntelligenceCycleRunRecord => r !== null,
@@ -133,11 +155,17 @@ export function normalizeAutoIntelligenceCycleState(
     intervalMs: intervalMs,
     lastRunAt: v.lastRunAt as string | null,
     lastStatus: v.lastStatus as AutoCycleStatus | null,
+    lastTickStartedAt: v.lastTickStartedAt as string | null,
+    lastTickCompletedAt: v.lastTickCompletedAt as string | null,
+    nextRunAt: v.nextRunAt as string | null,
     lastSymbol: v.lastSymbol as string | null,
     lastScore: lastScore as number | null,
     lastReadiness: v.lastReadiness as string | null,
     lastSource: v.lastSource as string | null,
     lastError: v.lastError as string | null,
+    symbolsScanned: symbolsScanned,
+    symbolsSucceeded: symbolsSucceeded,
+    symbolsFailed: symbolsFailed,
     history: history.slice(0, MAX_CYCLE_HISTORY),
   };
 }
@@ -166,12 +194,38 @@ export function isAutoIntelligenceCycleActive(): boolean {
   return intervalId !== null;
 }
 
+export function isTickRunning(): boolean {
+  return tickLock;
+}
+
+export function isCycleStale(state: AutoIntelligenceCycleState): boolean {
+  if (state.lastStatus !== "passed" || !state.lastTickCompletedAt) return false;
+  const completedMs = Date.parse(state.lastTickCompletedAt);
+  if (Number.isNaN(completedMs)) return false;
+  return Date.now() - completedMs > STALE_THRESHOLD_MS;
+}
+
+export function getStaleWarning(state: AutoIntelligenceCycleState): string | null {
+  if (!state.lastTickCompletedAt && !state.lastRunAt) return null;
+  if (state.lastStatus === "passed" && !isCycleStale(state)) return null;
+  if (state.lastStatus === "passed" && isCycleStale(state)) {
+    const ageMin = Math.round((Date.now() - Date.parse(state.lastTickCompletedAt!)) / 60000);
+    return `Last successful cycle was ${ageMin} min ago (stale threshold: 20 min). Live data may be outdated.`;
+  }
+  if (state.lastStatus === "failed") {
+    return `Last cycle failed. Previous valid report retained but may be stale.`;
+  }
+  return null;
+}
+
 export function startAutoIntelligenceCycle(): boolean {
   if (intervalId !== null) return false;
   if (typeof setInterval === "undefined") return false;
 
   const state = getAutoIntelligenceCycleState();
-  saveState({ ...state, enabled: true });
+  const now = new Date();
+  const nextRunAt = new Date(now.getTime() + DEFAULT_CYCLE_INTERVAL_MS).toISOString();
+  saveState({ ...state, enabled: true, nextRunAt });
 
   intervalId = setInterval(() => {
     runAutoIntelligenceTick();
@@ -187,7 +241,7 @@ export function stopAutoIntelligenceCycle(): boolean {
   }
 
   const state = getAutoIntelligenceCycleState();
-  saveState({ ...state, enabled: false });
+  saveState({ ...state, enabled: false, nextRunAt: null });
 
   return true;
 }
@@ -199,8 +253,9 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
 
   tickLock = true;
 
+  const startedAt = new Date().toISOString();
   const stateBefore = getAutoIntelligenceCycleState();
-  saveState({ ...stateBefore, lastStatus: "running" });
+  saveState({ ...stateBefore, lastStatus: "running", lastTickStartedAt: startedAt });
 
   try {
     let lastSymbol: string | null = null;
@@ -209,10 +264,13 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
     let lastSource: string | null = null;
     let lastError: string | null = null;
     let anySuccess = false;
+    let successCount = 0;
+    let failCount = 0;
 
     for (const symbol of TRACKED_SYMBOLS) {
       const result = await fetchLive15mCandles({ symbol, limit: 100 });
       if (!result.ok) {
+        failCount += 1;
         if (!lastError) {
           lastError = `${symbol}: ${result.error}`;
         } else {
@@ -231,13 +289,14 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       lastReadiness = report.readinessStatus;
       lastSource = report.source;
       anySuccess = true;
+      successCount += 1;
     }
 
-    const now = new Date().toISOString();
+    const completedAt = new Date().toISOString();
     const status: "passed" | "failed" = anySuccess ? "passed" : "failed";
 
     const runRecord: AutoIntelligenceCycleRunRecord = {
-      runAt: now,
+      runAt: completedAt,
       status,
       symbol: lastSymbol ?? TRACKED_SYMBOLS[0],
       score: lastScore,
@@ -249,26 +308,37 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
     const currentState = getAutoIntelligenceCycleState();
     const newHistory = [runRecord, ...currentState.history].slice(0, MAX_CYCLE_HISTORY);
 
+    // Calculate next run if cycle is still active
+    const nextRunAt = intervalId !== null
+      ? new Date(Date.now() + DEFAULT_CYCLE_INTERVAL_MS).toISOString()
+      : null;
+
     saveState({
       ...currentState,
-      lastRunAt: now,
+      lastRunAt: completedAt,
       lastStatus: status,
+      lastTickStartedAt: startedAt,
+      lastTickCompletedAt: completedAt,
+      nextRunAt,
       lastSymbol,
       lastScore,
       lastReadiness,
       lastSource,
       lastError,
+      symbolsScanned: TRACKED_SYMBOLS.length,
+      symbolsSucceeded: successCount,
+      symbolsFailed: failCount,
       history: newHistory,
     });
 
     return { ok: anySuccess, error: anySuccess ? undefined : lastError ?? "All fetches failed" };
   } catch (err) {
-    const now = new Date().toISOString();
+    const completedAt = new Date().toISOString();
     const message = err instanceof Error ? err.message : "Unknown error";
     const currentState = getAutoIntelligenceCycleState();
 
     const runRecord: AutoIntelligenceCycleRunRecord = {
-      runAt: now,
+      runAt: completedAt,
       status: "failed",
       symbol: currentState.lastSymbol ?? TRACKED_SYMBOLS[0],
       score: null,
@@ -279,11 +349,21 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
 
     const newHistory = [runRecord, ...currentState.history].slice(0, MAX_CYCLE_HISTORY);
 
+    const nextRunAt = intervalId !== null
+      ? new Date(Date.now() + DEFAULT_CYCLE_INTERVAL_MS).toISOString()
+      : null;
+
     saveState({
       ...currentState,
-      lastRunAt: now,
+      lastRunAt: completedAt,
       lastStatus: "failed",
+      lastTickStartedAt: startedAt,
+      lastTickCompletedAt: completedAt,
+      nextRunAt,
       lastError: message,
+      symbolsScanned: TRACKED_SYMBOLS.length,
+      symbolsSucceeded: 0,
+      symbolsFailed: TRACKED_SYMBOLS.length,
       history: newHistory,
     });
 
@@ -299,11 +379,17 @@ export function clearAutoIntelligenceCycleHistory(): boolean {
     ...state,
     lastRunAt: null,
     lastStatus: null,
+    lastTickStartedAt: null,
+    lastTickCompletedAt: null,
+    nextRunAt: state.enabled ? new Date(Date.now() + DEFAULT_CYCLE_INTERVAL_MS).toISOString() : null,
     lastSymbol: null,
     lastScore: null,
     lastReadiness: null,
     lastSource: null,
     lastError: null,
+    symbolsScanned: 0,
+    symbolsSucceeded: 0,
+    symbolsFailed: 0,
     history: [],
   });
   return true;
