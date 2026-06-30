@@ -1,16 +1,14 @@
 import { useEffect, useRef } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider } from "@/context/AppProvider";
+import CommandCenterDashboard from "@/components/CommandCenterDashboard";
 import Navigation from "@/components/Navigation";
 import ViewContainer from "@/components/ViewContainer";
-import HeroSection from "@/sections/HeroSection";
 import WatchlistSection from "@/sections/WatchlistSection";
 import PortfolioSection from "@/sections/PortfolioSection";
 import AnalyticsSection from "@/sections/AnalyticsSection";
 import SettingsSection from "@/sections/SettingsSection";
 import HelpSection from "@/sections/HelpSection";
-import MarketNotes from "@/components/MarketNotes";
-import PaperSignalEngine from "@/components/PaperSignalEngine";
 import type { TranceTunnel } from "@/lib/TranceTunnel";
 
 function AppContent() {
@@ -77,14 +75,7 @@ function AppContent() {
             path="/"
             element={
               <ViewContainer>
-                <HeroSection />
-                <div
-                  className="relative z-[1] mx-auto px-6 pb-16 lg:px-12"
-                  style={{ maxWidth: 1280 }}
-                >
-                  <PaperSignalEngine />
-                  <MarketNotes className="mt-8" />
-                </div>
+                <CommandCenterDashboard />
               </ViewContainer>
             }
           />
