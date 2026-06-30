@@ -12,6 +12,7 @@
     "test:signal-quality": "node scripts/verify-signal-quality-score.mjs",
     "test:market-data-integrity": "node scripts/verify-market-data-integrity.mjs",
     "test:live-candle-provider": "node scripts/verify-live-candle-provider.mjs",
+    "test:auto-intelligence-cycle": "node scripts/verify-auto-intelligence-cycle.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

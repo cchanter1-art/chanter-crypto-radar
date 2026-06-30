@@ -57,6 +57,11 @@ import {
   normalizeMarketDataIntegrityReport,
   type MarketDataIntegrityReport,
 } from "@/lib/marketDataIntegrity";
+import {
+  DEFAULT_CYCLE_INTERVAL_MS,
+  normalizeAutoIntelligenceCycleState,
+  type AutoIntelligenceCycleState,
+} from "@/lib/autoIntelligenceCycle";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -100,6 +105,7 @@ export interface LocalDataBackup {
   forwardTestData: ForwardTestData;
   signalQualityHistory: SignalQualityRecord[];
   marketDataIntegrityHistory: MarketDataIntegrityReport[];
+  autoIntelligenceCycleState: AutoIntelligenceCycleState;
   settings: AppSettings;
 }
 
@@ -119,6 +125,7 @@ export interface ImportedLocalDataBackup {
   forwardTestData: ForwardTestData;
   signalQualityHistory: SignalQualityRecord[];
   marketDataIntegrityHistory: MarketDataIntegrityReport[];
+  autoIntelligenceCycleState: AutoIntelligenceCycleState;
 }
 
 type ValidationResult<T> =
@@ -531,6 +538,33 @@ function validateMarketDataIntegrityHistory(
   return { ok: true, value: records.slice(0, MAX_MARKET_DATA_INTEGRITY_HISTORY) };
 }
 
+function validateAutoIntelligenceCycleState(
+  value: unknown,
+): ValidationResult<AutoIntelligenceCycleState> {
+  if (value === undefined) {
+    return {
+      ok: true,
+      value: {
+        enabled: false,
+        intervalMs: DEFAULT_CYCLE_INTERVAL_MS,
+        lastRunAt: null,
+        lastStatus: null,
+        lastSymbol: null,
+        lastScore: null,
+        lastReadiness: null,
+        lastSource: null,
+        lastError: null,
+        history: [],
+      },
+    };
+  }
+  const normalized = normalizeAutoIntelligenceCycleState(value);
+  if (!normalized) {
+    return { ok: false, message: "Backup auto intelligence cycle state is invalid." };
+  }
+  return { ok: true, value: { ...normalized, enabled: false } };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -581,6 +615,18 @@ export function createLocalDataBackup(
   forwardTestData: ForwardTestData = { activeSession: null, completedSessions: [] },
   signalQualityHistory: SignalQualityRecord[] = [],
   marketDataIntegrityHistory: MarketDataIntegrityReport[] = [],
+  autoIntelligenceCycleState: AutoIntelligenceCycleState = {
+    enabled: false,
+    intervalMs: DEFAULT_CYCLE_INTERVAL_MS,
+    lastRunAt: null,
+    lastStatus: null,
+    lastSymbol: null,
+    lastScore: null,
+    lastReadiness: null,
+    lastSource: null,
+    lastError: null,
+    history: [],
+  },
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -644,6 +690,18 @@ export function createLocalDataBackup(
       .map(normalizeMarketDataIntegrityReport)
       .filter((report): report is MarketDataIntegrityReport => report !== null)
       .slice(0, MAX_MARKET_DATA_INTEGRITY_HISTORY),
+    autoIntelligenceCycleState: normalizeAutoIntelligenceCycleState(autoIntelligenceCycleState) ?? {
+      enabled: false,
+      intervalMs: DEFAULT_CYCLE_INTERVAL_MS,
+      lastRunAt: null,
+      lastStatus: null,
+      lastSymbol: null,
+      lastScore: null,
+      lastReadiness: null,
+      lastSource: null,
+      lastError: null,
+      history: [],
+    },
     settings: { ...state.settings },
   };
 }
@@ -760,6 +818,13 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${marketDataIntegrityHistory.message}` };
   }
 
+  const autoIntelligenceCycleState = validateAutoIntelligenceCycleState(
+    parsed.autoIntelligenceCycleState,
+  );
+  if (autoIntelligenceCycleState.ok === false) {
+    return { ok: false, message: `Import failed. ${autoIntelligenceCycleState.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -788,6 +853,7 @@ export function parseLocalDataBackup(
       forwardTestData: forwardTestData.value,
       signalQualityHistory: signalQualityHistory.value,
       marketDataIntegrityHistory: marketDataIntegrityHistory.value,
+      autoIntelligenceCycleState: autoIntelligenceCycleState.value,
     },
   };
 }

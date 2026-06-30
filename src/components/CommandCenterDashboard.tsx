@@ -12,6 +12,7 @@ import {
   Layers3,
   Radar,
   ShieldCheck,
+  Zap,
 } from "lucide-react";
 import { useAppState, usePortfolio } from "@/context/AppContext";
 import { formatCurrency, formatPercentage } from "@/data/mockData";
@@ -38,6 +39,7 @@ import {
 } from "@/lib/forwardTestSession";
 import { loadLatestSignalQualityScore } from "@/lib/signalQualityScore";
 import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
+import { getAutoIntelligenceCycleState, isAutoIntelligenceCycleActive } from "@/lib/autoIntelligenceCycle";
 import {
   loadPaperRiskJournal,
   loadPaperRiskSettings,
@@ -237,6 +239,8 @@ function createLocalSnapshot() {
     forwardTestData: loadForwardTestData(),
     latestSignalQuality: loadLatestSignalQualityScore(),
     latestIntegrity: loadLatestMarketDataIntegrity(),
+    autoCycleState: getAutoIntelligenceCycleState(),
+    autoCycleActive: isAutoIntelligenceCycleActive(),
     futuresHistory: loadFuturesPaperHistory(),
     futuresPositions: loadFuturesPaperPositions(),
     futuresSettings: loadFuturesPaperSettings(),
@@ -738,6 +742,41 @@ export default function CommandCenterDashboard() {
                 No integrity report available. Run a check from Analytics.
               </p>
             )}
+          </SectionCard>
+
+          <SectionCard
+            id="auto-cycle-title"
+            title="Auto Intelligence Cycle"
+            subtitle="15-minute browser-local market data refresh"
+            icon={<Zap size={17} />}
+            badge={localSnapshot.autoCycleActive ? "Running" : localSnapshot.autoCycleState.lastStatus === "passed" ? "Last passed" : localSnapshot.autoCycleState.lastStatus === "failed" ? "Last failed" : "Off"}
+          >
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <Metric
+                label="Status"
+                value={localSnapshot.autoCycleActive ? "Running" : localSnapshot.autoCycleState.enabled ? "Enabled" : "Off"}
+                detail={localSnapshot.autoCycleState.lastStatus ? `Last: ${localSnapshot.autoCycleState.lastStatus}` : "No runs yet"}
+              />
+              <Metric
+                label="Last run"
+                value={localSnapshot.autoCycleState.lastRunAt ? formatTimestamp(localSnapshot.autoCycleState.lastRunAt) : "Never"}
+                detail={localSnapshot.autoCycleState.lastSymbol ? localSnapshot.autoCycleState.lastSymbol : ""}
+              />
+              <Metric
+                label="Last score"
+                value={localSnapshot.autoCycleState.lastScore !== null ? `${localSnapshot.autoCycleState.lastScore}/100` : "N/A"}
+                detail={localSnapshot.autoCycleState.lastReadiness ? localSnapshot.autoCycleState.lastReadiness.replace(/_/g, " ") : ""}
+              />
+            </div>
+            {localSnapshot.autoCycleState.lastError && (
+              <p className="mt-3 text-xs" style={{ color: "#a78b63" }}>
+                {localSnapshot.autoCycleState.lastError}
+              </p>
+            )}
+            <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+              <ShieldCheck className="mt-0.5 shrink-0" size={13} />
+              <p>Paper-only automation. No wallet. No orders. No auto positions.</p>
+            </div>
           </SectionCard>
 
           <SectionCard

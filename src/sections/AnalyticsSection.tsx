@@ -13,6 +13,7 @@ const FuturesStrategyBacktestPanel = lazy(() => import("@/components/FuturesStra
 const ForwardTestSessionPanel = lazy(() => import("@/components/ForwardTestSessionPanel"));
 const SignalQualityScorePanel = lazy(() => import("@/components/SignalQualityScorePanel"));
 const MarketDataIntegrityPanel = lazy(() => import("@/components/MarketDataIntegrityPanel"));
+const AutoIntelligenceCyclePanel = lazy(() => import("@/components/AutoIntelligenceCyclePanel"));
 
 export default function AnalyticsSection() {
   return (
@@ -56,6 +57,9 @@ export default function AnalyticsSection() {
 
       <Suspense fallback={<LazyRouteFallback />}>
         <MarketDataIntegrityPanel />
+      </Suspense>
+      <Suspense fallback={<LazyRouteFallback />}>
+        <AutoIntelligenceCyclePanel />
       </Suspense>
 
 <MarketNotes className="mt-8" />
