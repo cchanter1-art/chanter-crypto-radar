@@ -37,7 +37,7 @@ import {
   getLatestForwardTestObservation,
   loadForwardTestData,
 } from "@/lib/forwardTestSession";
-import { loadLatestSignalQualityScore, buildEvidenceStack } from "@/lib/signalQualityScore";
+import { loadLatestSignalQualityScore, buildEvidenceStack, applyEvidenceModifier } from "@/lib/signalQualityScore";
 import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive, getLatestAutoObservation } from "@/lib/autoIntelligenceCycle";
 import {
@@ -238,6 +238,24 @@ function createLocalSnapshot() {
     futuresStrategyBacktests: loadFuturesStrategyBacktestHistory(),
     forwardTestData: loadForwardTestData(),
     latestSignalQuality: loadLatestSignalQualityScore(),
+    evidenceAdjusted: (() => {
+      const sq = loadLatestSignalQualityScore();
+      const st = buildEvidenceStack({
+        integrity: loadLatestMarketDataIntegrity(),
+        autoObs: getAutoIntelligenceCycleState(),
+        forwardTest: (() => {
+          const d = loadForwardTestData();
+          const s = d.activeSession ?? d.completedSessions[0] ?? null;
+          return s ? { observations: s.observations, latestDirection: s.observations[0]?.direction ?? null } : null;
+        })(),
+        backtest: (() => {
+          const r = loadFuturesStrategyBacktestHistory()[0] ?? null;
+          return r ? { returnPercent: r.metrics.returnPercent, winRate: r.metrics.winRate } : null;
+        })(),
+        riskGate: sq ? { riskStatus: sq.input.riskStatus } : null,
+      });
+      return sq ? applyEvidenceModifier(sq, st) : null;
+    })(),
     evidenceStack: buildEvidenceStack({
       integrity: loadLatestMarketDataIntegrity(),
       autoObs: getAutoIntelligenceCycleState(),
@@ -597,13 +615,14 @@ export default function CommandCenterDashboard() {
           title="Signal Quality Intelligence"
           subtitle="Latest transparent paper-signal evaluation"
           icon={<Gauge size={17} />}
-          badge={localSnapshot.evidenceStack.completeness === "complete" ? "Evidence: complete" : localSnapshot.evidenceStack.completeness === "partial" ? "Evidence: partial" : "Evidence: missing"}
+          badge={localSnapshot.latestSignalQuality?.evidenceCompleteness ? "Evidence: " + localSnapshot.latestSignalQuality.evidenceCompleteness : localSnapshot.evidenceStack.completeness === "complete" ? "Evidence: complete (live)" : localSnapshot.evidenceStack.completeness === "partial" ? "Evidence: partial (live)" : localSnapshot.latestSignalQuality ? "Evidence: legacy" : "Evidence: missing"}
           className="mt-6"
         >
           {localSnapshot.latestSignalQuality ? (
             <>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                <Metric label="Latest score" value={`${localSnapshot.latestSignalQuality.score} / 100`} />
+                <Metric label="Base score" value={`${localSnapshot.latestSignalQuality.score} / 100`} />
+                <Metric label="Evidence score" value={(localSnapshot.latestSignalQuality?.finalScore ?? localSnapshot.evidenceAdjusted?.finalScore) ? `${localSnapshot.latestSignalQuality?.finalScore ?? localSnapshot.evidenceAdjusted.finalScore} / 100` : "N/A"} detail={localSnapshot.latestSignalQuality ? (localSnapshot.latestSignalQuality.evidenceCompleteness ? localSnapshot.latestSignalQuality.evidenceCompleteness : "legacy") + (localSnapshot.latestSignalQuality.evidenceCapsApplied && localSnapshot.latestSignalQuality.evidenceCapsApplied.length > 0 ? " (capped)" : "") : localSnapshot.evidenceAdjusted ? "live" : "no data"} />
                 <Metric label="Quality label" value={localSnapshot.latestSignalQuality.label} />
                 <Metric
                   label="Setup"

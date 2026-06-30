@@ -23,6 +23,7 @@ import { getAutoIntelligenceCycleState } from "@/lib/autoIntelligenceCycle";
 import { loadLatestFuturesStrategyBacktest } from "@/lib/futuresStrategyBacktest";
 import {
   buildEvidenceStack,
+  applyEvidenceModifier,
   MAX_SIGNAL_QUALITY_HISTORY,
   SIGNAL_QUALITY_PROFILES,
   clearSignalQualityHistory,
@@ -85,6 +86,7 @@ export default function SignalQualityScorePanel() {
     })(),
     riskGate: activeRecord ? { riskStatus: activeRecord.input.riskStatus } : null,
   }));
+  const evidenceAdjusted = activeRecord ? applyEvidenceModifier(activeRecord, evidenceStack) : null;
 
   const handleGenerate = () => {
     setError(null);
@@ -141,23 +143,38 @@ export default function SignalQualityScorePanel() {
       leverage,
       setup.suggestedDirection,
     );
-    const record = createSignalQualityRecord({
-      profile,
-      scenario,
-      symbol,
-      leverage,
+    const liveStack = buildEvidenceStack({
+      integrity: loadLatestMarketDataIntegrity(),
+      autoObs: getAutoIntelligenceCycleState(),
+      forwardTest: (() => {
+        const d = loadForwardTestData();
+        const s = d.activeSession ?? d.completedSessions[0] ?? null;
+        return s ? { observations: s.observations, latestDirection: s.observations[0]?.direction ?? null } : null;
+      })(),
+      backtest: (() => {
+        const r = loadLatestFuturesStrategyBacktest();
+        return r ? { returnPercent: r.metrics.returnPercent, winRate: r.metrics.winRate } : null;
+      })(),
+      riskGate: { riskStatus },
+    });
+    // Compute the real evaluation to get correct base score
+    const evalInput = {
+      profile, scenario, symbol, leverage,
       direction: setup.suggestedDirection,
       confidence: setup.confidence,
       stopLossPercent: setup.stopLossPercent,
       takeProfitPercent: setup.takeProfitPercent,
-      riskStatus,
-      riskReason,
-      riskRewardRatio,
-      backtestEvidence,
-      forwardEvidence,
+      riskStatus, riskReason, riskRewardRatio,
+      backtestEvidence, forwardEvidence,
       dataFreshness: getSignalQualityDataFreshness(priceStatus, lastPriceUpdate, createdAt),
       localMockOnly: true,
-    }, createdAt);
+    };
+    // Use a temporary record to get the base evaluation, then build evidence snapshot
+    const tempRecord = createSignalQualityRecord(evalInput, createdAt);
+    const adjusted = tempRecord ? applyEvidenceModifier(tempRecord, liveStack) : null;
+    const record = createSignalQualityRecord(evalInput, createdAt,
+      adjusted && tempRecord ? { adjusted: { ...adjusted, baseScore: tempRecord.score }, stack: liveStack } : undefined,
+    );
 
     if (!record) {
       setError("Signal quality inputs could not be validated.");
@@ -351,13 +368,30 @@ export default function SignalQualityScorePanel() {
               <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>Not evaluated</p>
             )}
           </div>
-          {/* Final score classification */}
+          {/* Score breakdown */}
           <div className="rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
-            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Score classification</p>
-            {activeRecord ? (
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Live evidence score</p>
+            {activeRecord && evidenceAdjusted ? (
               <div className="mt-1 space-y-0.5">
-                <p className="data-mono text-[10px]" style={{ color: recordColor }}>{activeRecord.score}/100 -- {activeRecord.label}</p>
-                <p className="text-[10px]" style={{ color: "#6b7280" }}>{activeRecord.evidenceStatus}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px]" style={{ color: "#6b7280" }}>Base:</span>
+                  <span className="data-mono text-[10px]" style={{ color: "#9ca3af" }}>{evidenceAdjusted.baseScore}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px]" style={{ color: "#6b7280" }}>Modifier:</span>
+                  <span className="data-mono text-[10px]" style={{ color: evidenceAdjusted.evidenceModifier > 0 ? "#22c55e" : evidenceAdjusted.evidenceModifier < 0 ? "#ef4444" : "#9ca3af" }}>{evidenceAdjusted.evidenceModifier > 0 ? "+" : ""}{evidenceAdjusted.evidenceModifier}</span>
+                </div>
+                <div className="flex items-center justify-between" style={{ borderTop: "1px solid rgba(201,215,227,0.08)", paddingTop: 2, marginTop: 2 }}>
+                  <span className="text-[10px] font-medium" style={{ color: "#9ca3af" }}>Final:</span>
+                  <span className="data-mono text-[10px] font-medium" style={{ color: scoreColor(evidenceAdjusted.finalScore) }}>{evidenceAdjusted.finalScore}/100 -- {evidenceAdjusted.label}</span>
+                </div>
+                {evidenceAdjusted.capsApplied.length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {evidenceAdjusted.capsApplied.map((cap, i) => (
+                      <p key={i} className="text-[9px]" style={{ color: "#f59e0b" }}>CAP: {cap}</p>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>No score generated</p>
@@ -532,7 +566,7 @@ export default function SignalQualityScorePanel() {
         <details className="mt-6" style={{ borderTop: "1px solid rgba(201,215,227,0.05)", paddingTop: 16 }}>
           <summary className="flex cursor-pointer items-center gap-2 text-xs" style={{ color: "#6b7280" }}>
             <History size={13} />
-            Saved quality scores -- {history.length} / {MAX_SIGNAL_QUALITY_HISTORY}
+            Saved quality scores (with evidence snapshot) -- {history.length} / {MAX_SIGNAL_QUALITY_HISTORY}
           </summary>
           <div className="mt-3 grid gap-2">
             {history.map((record) => (
@@ -544,7 +578,7 @@ export default function SignalQualityScorePanel() {
                 style={{ border: "1px solid rgba(201,215,227,0.04)" }}
               >
                 <span className="text-xs" style={{ color: "#9ca3af" }}>{record.input.profile} -- {record.input.scenario} -- {record.input.symbol}</span>
-                <span className="data-mono text-xs" style={{ color: scoreColor(record.score) }}>{record.score} -- {record.label}</span>
+                <span className="data-mono text-xs" style={{ color: scoreColor(record.finalScore ?? record.score) }}>{record.finalScore ?? record.score} -- {record.label}</span>
                 <span className="text-[10px]" style={{ color: "#4b5563" }}>{formatTimestamp(record.createdAt)}</span>
               </button>
             ))}

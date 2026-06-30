@@ -370,8 +370,584 @@ try {
     }
   }
 
+  // 22. Evidence modifier: no evidence keeps score mostly unchanged but marks missing
+  {
+    const stack = quality.buildEvidenceStack({});
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "Medium",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.equal(adjusted.baseScore, base.score);
+    assert.equal(adjusted.evidenceModifier, 0, "No evidence = 0 modifier");
+    assert.ok(adjusted.finalScore <= 79, "Missing evidence caps at 79");
+    assert.ok(adjusted.capsApplied.some((s) => s.includes("missing")), "Should have missing cap");
+  }
+
+  // 23. Clean market data gives small positive modifier
+  {
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 95, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+      autoObs: { autoObservations: [{ id: "a" }], observationsCreated: 1, lastSymbol: "BTCUSDT", lastScore: 80 },
+      forwardTest: { observations: [{ id: "f" }], latestDirection: "LONG" },
+      backtest: { returnPercent: 5, winRate: 55 },
+      riskGate: { riskStatus: "APPROVED" },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "test-bt", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.ok(adjusted.evidenceModifier > 0, "Clean data should give positive modifier");
+    assert.ok(adjusted.evidenceModifier <= 8, "Modifier must not exceed +8");
+    assert.ok(adjusted.finalScore >= adjusted.baseScore, "Final should be >= base with positive modifier");
+  }
+
+  // 24. Stale market data applies penalty and cap
+  {
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 60, source: "LIVE_READ_ONLY", freshnessStatus: "stale", readinessStatus: "ready_with_warnings" },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "test-bt", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.ok(adjusted.evidenceModifier < 0, "Stale data should give negative modifier");
+    assert.ok(adjusted.finalScore <= 69, "Stale data caps final at 69");
+  }
+
+  // 25. Blocked market data caps final score <= 49
+  {
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 30, source: "LOCAL_MOCK", freshnessStatus: "stale", readinessStatus: "blocked" },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "test-bt", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.ok(adjusted.finalScore <= 49, "Blocked integrity caps at 49");
+  }
+
+  // 26. Auto observations add at most +2 and create no trades
+  {
+    store.clear();
+    const stack = quality.buildEvidenceStack({
+      autoObs: { autoObservations: new Array(100), observationsCreated: 5, lastSymbol: "BTCUSDT", lastScore: 75 },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "Medium",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "WAIT",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    const autoFactor = adjusted.evidenceFactors.find((f) => f.id === "evidence-auto");
+    assert.ok(autoFactor, "Should have auto obs factor");
+    assert.equal(autoFactor.pointsImpact, 2, "Auto obs factor is +2");
+    assert.equal(futuresApi.loadFuturesPaperPositions().length, 0, "No positions created");
+    assert.equal(futuresApi.loadFuturesPaperHistory().length, 0, "No trades created");
+  }
+
+  // 27. Positive backtest adds at most +1
+  {
+    const stack = quality.buildEvidenceStack({
+      backtest: { returnPercent: 50, winRate: 80 },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "Medium",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    const btFactor = adjusted.evidenceFactors.find((f) => f.id === "evidence-backtest");
+    assert.ok(btFactor, "Should have backtest factor");
+    assert.equal(btFactor.pointsImpact, 1, "Backtest factor capped at +1");
+  }
+
+  // 28. Negative backtest penalizes
+  {
+    const stack = quality.buildEvidenceStack({
+      backtest: { returnPercent: -10, winRate: 30 },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "Medium",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    const btFactor = adjusted.evidenceFactors.find((f) => f.id === "evidence-backtest");
+    assert.ok(btFactor, "Should have backtest factor");
+    assert.equal(btFactor.pointsImpact, -3, "Negative backtest gives -3");
+  }
+
+  // 29. REDUCED risk caps final score <= 69
+  {
+    const stack = quality.buildEvidenceStack({
+      riskGate: { riskStatus: "REDUCED" },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "REDUCED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "test-bt", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.ok(adjusted.finalScore <= 69, "REDUCED risk caps at 69");
+  }
+
+  // 30. WAIT risk caps final score <= 59
+  {
+    const stack = quality.buildEvidenceStack({
+      riskGate: { riskStatus: "WAIT" },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "WAIT",
+      confidence: "Medium",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "WAIT",
+      riskReason: "Test",
+      riskRewardRatio: 0,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.ok(adjusted.finalScore <= 59, "WAIT risk caps at 59");
+  }
+
+  // 31. BLOCKED risk caps final score <= 49
+  {
+    const stack = quality.buildEvidenceStack({
+      riskGate: { riskStatus: "BLOCKED" },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "BLOCKED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "test-bt", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.ok(adjusted.finalScore <= 49, "BLOCKED risk caps at 49");
+  }
+
+  // 32. Evidence modifier never exceeds +8
+  {
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 95, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+      autoObs: { autoObservations: [{ id: "a" }], observationsCreated: 1, lastSymbol: "BTCUSDT", lastScore: 90 },
+      forwardTest: { observations: [{ id: "f" }], latestDirection: "LONG" },
+      backtest: { returnPercent: 10, winRate: 55 },
+      riskGate: { riskStatus: "APPROVED" },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "test-bt", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.ok(adjusted.evidenceModifier <= 8, "Modifier must not exceed +8");
+  }
+
+  // 33. Final score clamps 0-100
+  {
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 10, source: "LOCAL_MOCK", freshnessStatus: "stale", readinessStatus: "blocked" },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "Medium",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(base, stack);
+    assert.ok(adjusted.finalScore >= 0, "Final score >= 0");
+    assert.ok(adjusted.finalScore <= 100, "Final score <= 100");
+  }
+
+  // 34. No paper positions/trades created
+  {
+    store.clear();
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 90, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+      autoObs: { autoObservations: [{ id: "x" }], observationsCreated: 1, lastSymbol: "BTCUSDT", lastScore: 85 },
+    });
+    const base = quality.evaluateSignalQuality({
+      profile: "Trend Follow",
+      scenario: "Neutral / Current Mock",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "test-bt", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    });
+    quality.applyEvidenceModifier(base, stack);
+    assert.equal(futuresApi.loadFuturesPaperPositions().length, 0, "No positions");
+    assert.equal(futuresApi.loadFuturesPaperHistory().length, 0, "No trades");
+  }
+
+  // 35. Malformed legacy localStorage does not crash
+  {
+    store.set("chanter-signal-quality-latest", "not-json");
+    const records = quality.loadSignalQualityHistory();
+    assert.ok(Array.isArray(records));
+    const stack = quality.buildEvidenceStack({ integrity: null, autoObs: null, forwardTest: null, backtest: null, riskGate: null });
+    assert.equal(stack.completeness, "missing");
+  }
+
+  // 36. Import/export backward compat
+  {
+    const records = quality.loadSignalQualityHistory();
+    for (const r of records) {
+      assert.ok(r.id);
+      assert.equal(r.evidenceModifier, undefined, "Stored records must not have evidenceModifier");
+      assert.equal(r.baseScore, undefined, "Stored records must not have baseScore");
+      assert.equal(r.finalScore, undefined, "Stored records must not have finalScore");
+    }
+  }
+
+  // 37. Old record without evidence fields loads safely
+  {
+    store.clear();
+    // Create a record without evidence snapshot
+    const old = quality.createSignalQualityRecord({
+      profile: "Trend Follow",
+      scenario: "Trending Up",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    }, "2026-01-01T00:00:00.000Z");
+    assert.ok(old, "Old-style record must be created");
+    assert.equal(old.baseScore, undefined, "Old record must not have baseScore");
+    assert.equal(old.finalScore, undefined, "Old record must not have finalScore");
+    // Save and reload
+    store.set("chanter-signal-quality-history", JSON.stringify([old]));
+    store.set("chanter-signal-quality-latest", JSON.stringify(old));
+    const loaded = quality.loadSignalQualityHistory();
+    assert.equal(loaded.length, 1, "Old record must load");
+    assert.equal(loaded[0].finalScore, undefined, "Loaded old record has no finalScore");
+    const latest = quality.loadLatestSignalQualityScore();
+    assert.ok(latest, "Old latest record must load");
+    assert.equal(latest.finalScore, undefined, "Old latest has no finalScore");
+  }
+
+  // 38. New signal saves baseScore, modifier, finalScore
+  {
+    store.clear();
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 90, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+      autoObs: { autoObservations: [{ id: "a" }], observationsCreated: 1, lastSymbol: "BTCUSDT", lastScore: 80 },
+      forwardTest: { observations: [{ id: "f" }], latestDirection: "LONG" },
+      backtest: { returnPercent: 5, winRate: 55 },
+      riskGate: { riskStatus: "APPROVED" },
+    });
+    const base = quality.createSignalQualityRecord({
+      profile: "Trend Follow",
+      scenario: "Trending Up",
+      symbol: "BTCUSDT",
+      leverage: 2,
+      direction: "LONG",
+      confidence: "High",
+      stopLossPercent: 3,
+      takeProfitPercent: 6,
+      riskStatus: "APPROVED",
+      riskReason: "Test",
+      riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "bt1", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh",
+      localMockOnly: true,
+    }, "2026-02-01T00:00:00.000Z",
+      { adjusted: quality.applyEvidenceModifier(quality.evaluateSignalQuality({
+        profile: "Trend Follow", scenario: "Trending Up", symbol: "BTCUSDT", leverage: 2,
+        direction: "LONG", confidence: "High", stopLossPercent: 3, takeProfitPercent: 6,
+        riskStatus: "APPROVED", riskReason: "Test", riskRewardRatio: 2,
+        backtestEvidence: { status: "positive", runId: "bt1", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+        forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+        dataFreshness: "fresh", localMockOnly: true,
+      }), stack), stack });
+    assert.ok(base, "Record with evidence must be created");
+    assert.ok(base.baseScore !== undefined, "Must have baseScore");
+    assert.ok(base.evidenceModifier !== undefined, "Must have evidenceModifier");
+    assert.ok(base.finalScore !== undefined, "Must have finalScore");
+    assert.ok(base.evidenceSnapshotAt, "Must have evidenceSnapshotAt");
+    assert.equal(base.evidenceCompleteness, "complete");
+    // Save and reload
+    store.set("chanter-signal-quality-history", JSON.stringify([base]));
+    store.set("chanter-signal-quality-latest", JSON.stringify(base));
+    const loaded = quality.loadSignalQualityHistory();
+    assert.equal(loaded.length, 1, "New record must load");
+    assert.equal(loaded[0].finalScore, base.finalScore, "finalScore must persist");
+    assert.equal(loaded[0].baseScore, base.baseScore, "baseScore must persist");
+  }
+
+  // 39. Saved finalScore does not change when later evidence changes
+  {
+    store.clear();
+    // Create record with positive evidence
+    const stack1 = quality.buildEvidenceStack({
+      integrity: { integrityScore: 95, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+      autoObs: { autoObservations: [{ id: "a" }], observationsCreated: 1, lastSymbol: "BTCUSDT", lastScore: 90 },
+      forwardTest: { observations: [{ id: "f" }], latestDirection: "LONG" },
+      backtest: { returnPercent: 10, winRate: 55 },
+      riskGate: { riskStatus: "APPROVED" },
+    });
+    const baseEval = quality.evaluateSignalQuality({
+      profile: "Trend Follow", scenario: "Trending Up", symbol: "BTCUSDT", leverage: 2,
+      direction: "LONG", confidence: "High", stopLossPercent: 3, takeProfitPercent: 6,
+      riskStatus: "APPROVED", riskReason: "Test", riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "bt1", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh", localMockOnly: true,
+    });
+    const adjusted1 = quality.applyEvidenceModifier(baseEval, stack1);
+    const record = quality.createSignalQualityRecord({
+      profile: "Trend Follow", scenario: "Trending Up", symbol: "BTCUSDT", leverage: 2,
+      direction: "LONG", confidence: "High", stopLossPercent: 3, takeProfitPercent: 6,
+      riskStatus: "APPROVED", riskReason: "Test", riskRewardRatio: 2,
+      backtestEvidence: { status: "positive", runId: "bt1", tradesTaken: 10, winRate: 60, netPnl: 200, maxDrawdown: 5, profitFactor: 1.5 },
+      forwardEvidence: { status: "consistent", observationCount: 5, actionableCount: 5, approvedCount: 4, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 80 },
+      dataFreshness: "fresh", localMockOnly: true,
+    }, "2026-03-01T00:00:00.000Z", { adjusted: adjusted1, stack: stack1 });
+    const savedFinal = record.finalScore;
+    // Now evidence changes drastically
+    const stack2 = quality.buildEvidenceStack({
+      integrity: { integrityScore: 10, source: "LOCAL_MOCK", freshnessStatus: "stale", readinessStatus: "blocked" },
+    });
+    const adjusted2 = quality.applyEvidenceModifier(baseEval, stack2);
+    // The saved record finalScore must not change
+    assert.equal(record.finalScore, savedFinal, "Saved finalScore must not change");
+    assert.notEqual(adjusted2.finalScore, savedFinal, "Live adjusted score should differ");
+  }
+
+  // 40. Malformed evidence fields normalize safely
+  {
+    // Create a valid record, then corrupt its evidence fields
+    const record = quality.createSignalQualityRecord({
+      profile: "Trend Follow", scenario: "Trending Up", symbol: "BTCUSDT", leverage: 2,
+      direction: "LONG", confidence: "High", stopLossPercent: 3, takeProfitPercent: 6,
+      riskStatus: "APPROVED", riskReason: "Test", riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh", localMockOnly: true,
+    }, "2026-04-01T00:00:00.000Z");
+    assert.ok(record);
+    // Corrupt: add bad evidence fields that should be stripped
+    const corrupted = { ...record, baseScore: "not-a-number", finalScore: null, evidenceCompleteness: "bogus" };
+    // This should fail normalization because baseScore is not a valid number
+    const result = quality.normalizeSignalQualityRecord(corrupted);
+    // The normalizer should reject malformed evidence fields
+    // Since baseScore is "not-a-number" but the original record has no baseScore,
+    // stableStringify will differ and return null
+    assert.equal(result, null, "Malformed evidence fields should fail normalization");
+  }
+
+  // 41. No paper positions/trades created by evidence persistence
+  {
+    store.clear();
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 90, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+    });
+    const baseEval = quality.evaluateSignalQuality({
+      profile: "Trend Follow", scenario: "Trending Up", symbol: "BTCUSDT", leverage: 2,
+      direction: "LONG", confidence: "High", stopLossPercent: 3, takeProfitPercent: 6,
+      riskStatus: "APPROVED", riskReason: "Test", riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh", localMockOnly: true,
+    });
+    const adjusted = quality.applyEvidenceModifier(baseEval, stack);
+    quality.createSignalQualityRecord({
+      profile: "Trend Follow", scenario: "Trending Up", symbol: "BTCUSDT", leverage: 2,
+      direction: "LONG", confidence: "High", stopLossPercent: 3, takeProfitPercent: 6,
+      riskStatus: "APPROVED", riskReason: "Test", riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh", localMockOnly: true,
+    }, "2026-05-01T00:00:00.000Z", { adjusted, stack });
+    assert.equal(futuresApi.loadFuturesPaperPositions().length, 0, "No positions");
+    assert.equal(futuresApi.loadFuturesPaperHistory().length, 0, "No trades");
+  }
+
+  // 42. Export/import: old backup without evidence fields still works
+  {
+    // The backup API should accept old records without evidence fields
+    // This is already covered by test 37 + the backup tests
+    // Just verify loadLatestSignalQualityScore handles old records
+    store.clear();
+    const old = quality.createSignalQualityRecord({
+      profile: "Trend Follow", scenario: "Trending Up", symbol: "BTCUSDT", leverage: 2,
+      direction: "LONG", confidence: "High", stopLossPercent: 3, takeProfitPercent: 6,
+      riskStatus: "APPROVED", riskReason: "Test", riskRewardRatio: 2,
+      backtestEvidence: { status: "none", runId: null, tradesTaken: 0, winRate: 0, netPnl: 0, maxDrawdown: 0, profitFactor: null },
+      forwardEvidence: { status: "none", observationCount: 0, actionableCount: 0, approvedCount: 0, blockedCount: 0, waitCount: 0, directionConsistencyPercent: 0 },
+      dataFreshness: "fresh", localMockOnly: true,
+    }, "2026-06-01T00:00:00.000Z");
+    store.set("chanter-signal-quality-latest", JSON.stringify(old));
+    const loaded = quality.loadLatestSignalQualityScore();
+    assert.ok(loaded, "Old latest must load");
+    assert.equal(loaded.finalScore, undefined, "Old record has no finalScore");
+  }
+
   console.log(
-    "Signal Quality Score verification passed: deterministic scoring, safety caps, evidence effects, history, backup validation, latest-score reader, evidence stack (no evidence, good/stale integrity, auto observations, forward-test, backtest, complete/missing, backward compat, no trades, no positions).",
+    "Signal Quality Score verification passed: deterministic scoring, safety caps, evidence effects, history, backup validation, latest-score reader, evidence stack, evidence modifier, evidence persistence (old records, new records, saved snapshot immutability, malformed fields, no trades, no positions, backward compat)."
   );
 } finally {
   await server.close();

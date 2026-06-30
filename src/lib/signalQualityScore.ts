@@ -121,6 +121,17 @@ export interface SignalQualityRecord extends SignalQualityEvaluation {
   id: string;
   createdAt: string;
   input: SignalQualityInput;
+  // Optional evidence snapshot fields (v1 persistence)
+  baseScore?: number;
+  evidenceModifier?: number;
+  finalScore?: number;
+  evidenceCompleteness?: EvidenceCompleteness;
+  evidencePositiveFactors?: string[];
+  evidenceNegativeFactors?: string[];
+  evidenceMissingFactors?: string[];
+  evidenceCapsApplied?: string[];
+  evidenceSnapshotAt?: string;
+  evidenceSourceSummary?: string;
 }
 
 export const SIGNAL_QUALITY_LATEST_STORAGE_KEY = "chanter-signal-quality-latest";
@@ -585,6 +596,142 @@ export function buildEvidenceStack(opts: {
   };
 }
 
+export interface EvidenceAdjustedScore {
+  baseScore: number;
+  evidenceModifier: number;
+  finalScore: number;
+  label: SignalQualityLabel;
+  capsApplied: string[];
+  evidenceFactors: SignalQualityFactor[];
+}
+
+/**
+ * Compute evidence modifier from an EvidenceStackSnapshot.
+ * Returns modifier points and list of cap reasons.
+ * Modifier is bounded: max +8, min -20.
+ */
+export function applyEvidenceModifier(
+  evaluation: SignalQualityEvaluation,
+  stack: EvidenceStackSnapshot,
+): EvidenceAdjustedScore {
+  const capsApplied: string[] = [];
+  const evidenceFactors: SignalQualityFactor[] = [];
+  let modifier = 0;
+
+  // Market Data Integrity
+  if (stack.hasMarketIntegrity && stack.integrityScore !== null) {
+    const score = stack.integrityScore;
+    const readiness = stack.integrityReadiness ?? "";
+    const freshness = stack.integrityFreshness ?? "";
+    if (score >= 90 && (readiness === "ready" || readiness === "clean")) {
+      modifier += 4;
+      evidenceFactors.push(factor("evidence-integrity", "Market integrity (high)", 4, `Integrity score ${score}/100 with ${readiness} readiness.`));
+    } else if (score >= 70 && (readiness === "ready" || readiness === "ready_with_warnings")) {
+      modifier += 2;
+      evidenceFactors.push(factor("evidence-integrity", "Market integrity (good)", 2, `Integrity score ${score}/100 with ${readiness} readiness.`));
+    } else if (score < 50 || readiness === "blocked") {
+      modifier -= 12;
+      evidenceFactors.push(factor("evidence-integrity", "Market integrity (blocked/low)", -12, `Integrity score ${score}/100 with ${readiness} readiness. Data quality is compromised.`));
+      capsApplied.push("Market data integrity blocked/invalid: final score capped at 49");
+    } else {
+      // score 50-69 or warning/stale
+      modifier -= 5;
+      evidenceFactors.push(factor("evidence-integrity", "Market integrity (warning)", -5, `Integrity score ${score}/100, freshness: ${freshness}, readiness: ${readiness}.`));
+      if (freshness === "stale" || freshness === "delayed") {
+        capsApplied.push("Market data stale: final score capped at 69");
+      }
+    }
+  }
+
+  // Auto Intelligence Observations
+  if (stack.hasAutoObservations) {
+    modifier += 2;
+    evidenceFactors.push(factor("evidence-auto", "Auto Intelligence observations", 2, `${stack.autoObsCount} auto observations recorded.`));
+  } else {
+    // missing = 0, no penalty
+  }
+
+  // Forward Test Evidence
+  if (stack.hasForwardTest) {
+    modifier += 2;
+    evidenceFactors.push(factor("evidence-forward", "Forward-test evidence", 2, `${stack.forwardObsCount} forward-test observations.`));
+  } else if (stack.forwardLatestDirection === "BLOCKED") {
+    modifier -= 3;
+    evidenceFactors.push(factor("evidence-forward", "Forward-test blocked", -3, "Forward-test observations show blocked state."));
+  }
+
+  // Backtest Evidence (conservative - mock data may overfit)
+  if (stack.hasBacktest && stack.backtestReturn !== null) {
+    if (stack.backtestReturn > 0) {
+      modifier += 1;
+      evidenceFactors.push(factor("evidence-backtest", "Backtest result (positive)", 1, `Backtest return: ${stack.backtestReturn.toFixed(2)}%. Capped at +1 to avoid overfitting bias.`));
+    } else {
+      modifier -= 3;
+      evidenceFactors.push(factor("evidence-backtest", "Backtest result (negative)", -3, `Backtest return: ${stack.backtestReturn.toFixed(2)}%.`));
+    }
+  }
+
+  // Risk Gate
+  if (stack.hasRiskGate && stack.riskGateStatus) {
+    if (stack.riskGateStatus === "APPROVED") {
+      modifier += 1;
+      evidenceFactors.push(factor("evidence-risk", "Risk gate approved", 1, "Risk gate status: APPROVED."));
+    } else if (stack.riskGateStatus === "REDUCED") {
+      capsApplied.push("Risk gate REDUCED: final score capped at 69");
+    } else if (stack.riskGateStatus === "WAIT") {
+      capsApplied.push("Risk gate WAIT: final score capped at 59");
+    } else if (stack.riskGateStatus === "BLOCKED") {
+      capsApplied.push("Risk gate BLOCKED: final score capped at 49");
+    }
+  }
+
+  // Hard cap: evidence modifier max +8, min -20
+  if (modifier > 8) {
+    capsApplied.push(`Evidence modifier capped at +8 (was ${modifier})`);
+    modifier = 8;
+  }
+  if (modifier < -20) {
+    capsApplied.push(`Evidence modifier floored at -20 (was ${modifier})`);
+    modifier = -20;
+  }
+
+  // Completeness cap
+  if (stack.completeness === "missing") {
+    capsApplied.push("Evidence stack missing: final score capped at 79");
+  }
+
+  let finalScore = evaluation.score + modifier;
+
+  // Apply caps
+  if (stack.completeness === "missing") finalScore = Math.min(finalScore, 79);
+  if (stack.hasMarketIntegrity && stack.integrityScore !== null && stack.integrityScore < 50) {
+    finalScore = Math.min(finalScore, 49);
+  }
+  if (stack.integrityReadiness === "blocked") {
+    finalScore = Math.min(finalScore, 49);
+  }
+  if (stack.integrityFreshness === "stale" || stack.integrityFreshness === "delayed") {
+    finalScore = Math.min(finalScore, 69);
+  }
+  if (stack.hasRiskGate && stack.riskGateStatus) {
+    if (stack.riskGateStatus === "BLOCKED") finalScore = Math.min(finalScore, 49);
+    if (stack.riskGateStatus === "WAIT") finalScore = Math.min(finalScore, 59);
+    if (stack.riskGateStatus === "REDUCED") finalScore = Math.min(finalScore, 69);
+  }
+
+  finalScore = Math.max(0, Math.min(100, Math.round(finalScore)));
+  const label = getQualityLabel(finalScore);
+
+  return {
+    baseScore: evaluation.score,
+    evidenceModifier: modifier,
+    finalScore,
+    label,
+    capsApplied,
+    evidenceFactors,
+  };
+}
+
 export function evaluateSignalQuality(inputValue: SignalQualityInput): SignalQualityEvaluation {
   const input = normalizeInput(inputValue);
   if (!input) throw new Error("Signal quality input is invalid.");
@@ -774,23 +921,73 @@ export function evaluateSignalQuality(inputValue: SignalQualityInput): SignalQua
 export function createSignalQualityRecord(
   inputValue: SignalQualityInput,
   createdAt: string,
+  evidenceSnapshot?: {
+    adjusted: EvidenceAdjustedScore;
+    stack: EvidenceStackSnapshot;
+  },
 ): SignalQualityRecord | null {
   const input = normalizeInput(inputValue);
   if (!input || !isValidDate(createdAt)) return null;
   const evaluation = evaluateSignalQuality(input);
-  return {
+  const base: SignalQualityRecord = {
     id: `signal-quality-${hashText(`${createdAt}|${JSON.stringify(input)}`)}`,
     createdAt,
     input,
     ...evaluation,
   };
+  if (evidenceSnapshot) {
+    const { adjusted, stack } = evidenceSnapshot;
+    base.baseScore = adjusted.baseScore;
+    base.evidenceModifier = adjusted.evidenceModifier;
+    base.finalScore = adjusted.finalScore;
+    base.evidenceCompleteness = stack.completeness;
+    base.evidencePositiveFactors = stack.positiveFactors;
+    base.evidenceNegativeFactors = stack.negativeFactors;
+    base.evidenceMissingFactors = stack.missingFactors;
+    base.evidenceCapsApplied = adjusted.capsApplied;
+    base.evidenceSnapshotAt = createdAt;
+    base.evidenceSourceSummary = stack.hasMarketIntegrity ? `Integrity ${stack.integrityScore}/100, ${stack.autoObsCount} auto obs, ${stack.forwardObsCount} forward obs` : undefined;
+  }
+  return base;
 }
 
 export function normalizeSignalQualityRecord(value: unknown): SignalQualityRecord | null {
   if (!isRecord(value) || !isValidDate(value.createdAt)) return null;
   const input = normalizeInput(value.input);
   if (!input) return null;
-  const expected = createSignalQualityRecord(input, value.createdAt);
+  // Check if the value has evidence snapshot fields
+  const hasEvidenceFields = value.baseScore !== undefined || value.finalScore !== undefined;
+  let expected: SignalQualityRecord | null;
+  if (hasEvidenceFields) {
+    // New record with evidence snapshot - normalize the evidence fields
+    const baseScore = typeof value.baseScore === "number" && Number.isFinite(value.baseScore) ? value.baseScore : undefined;
+    const evidenceModifier = typeof value.evidenceModifier === "number" && Number.isFinite(value.evidenceModifier) ? value.evidenceModifier : undefined;
+    const finalScore = typeof value.finalScore === "number" && Number.isFinite(value.finalScore) ? value.finalScore : undefined;
+    const evidenceCompleteness = (value.evidenceCompleteness === "complete" || value.evidenceCompleteness === "partial" || value.evidenceCompleteness === "missing") ? value.evidenceCompleteness : undefined;
+    const evidencePositiveFactors = Array.isArray(value.evidencePositiveFactors) ? value.evidencePositiveFactors.filter((f: unknown) => typeof f === "string") : undefined;
+    const evidenceNegativeFactors = Array.isArray(value.evidenceNegativeFactors) ? value.evidenceNegativeFactors.filter((f: unknown) => typeof f === "string") : undefined;
+    const evidenceMissingFactors = Array.isArray(value.evidenceMissingFactors) ? value.evidenceMissingFactors.filter((f: unknown) => typeof f === "string") : undefined;
+    const evidenceCapsApplied = Array.isArray(value.evidenceCapsApplied) ? value.evidenceCapsApplied.filter((f: unknown) => typeof f === "string") : undefined;
+    const evidenceSnapshotAt = typeof value.evidenceSnapshotAt === "string" && isValidDate(value.evidenceSnapshotAt) ? value.evidenceSnapshotAt : undefined;
+    const evidenceSourceSummary = typeof value.evidenceSourceSummary === "string" ? value.evidenceSourceSummary : undefined;
+    // Build expected record with evidence fields
+    expected = createSignalQualityRecord(input, value.createdAt);
+    if (expected) {
+      if (baseScore !== undefined) expected.baseScore = baseScore;
+      if (evidenceModifier !== undefined) expected.evidenceModifier = evidenceModifier;
+      if (finalScore !== undefined) expected.finalScore = finalScore;
+      if (evidenceCompleteness !== undefined) expected.evidenceCompleteness = evidenceCompleteness;
+      if (evidencePositiveFactors !== undefined) expected.evidencePositiveFactors = evidencePositiveFactors;
+      if (evidenceNegativeFactors !== undefined) expected.evidenceNegativeFactors = evidenceNegativeFactors;
+      if (evidenceMissingFactors !== undefined) expected.evidenceMissingFactors = evidenceMissingFactors;
+      if (evidenceCapsApplied !== undefined) expected.evidenceCapsApplied = evidenceCapsApplied;
+      if (evidenceSnapshotAt !== undefined) expected.evidenceSnapshotAt = evidenceSnapshotAt;
+      if (evidenceSourceSummary !== undefined) expected.evidenceSourceSummary = evidenceSourceSummary;
+    }
+  } else {
+    // Old record without evidence fields
+    expected = createSignalQualityRecord(input, value.createdAt);
+  }
   if (!expected || stableStringify(value) !== stableStringify(expected)) return null;
   return expected;
 }
