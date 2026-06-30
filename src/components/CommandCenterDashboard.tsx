@@ -37,7 +37,7 @@ import {
   getLatestForwardTestObservation,
   loadForwardTestData,
 } from "@/lib/forwardTestSession";
-import { loadLatestSignalQualityScore } from "@/lib/signalQualityScore";
+import { loadLatestSignalQualityScore, buildEvidenceStack } from "@/lib/signalQualityScore";
 import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive, getLatestAutoObservation } from "@/lib/autoIntelligenceCycle";
 import {
@@ -238,6 +238,20 @@ function createLocalSnapshot() {
     futuresStrategyBacktests: loadFuturesStrategyBacktestHistory(),
     forwardTestData: loadForwardTestData(),
     latestSignalQuality: loadLatestSignalQualityScore(),
+    evidenceStack: buildEvidenceStack({
+      integrity: loadLatestMarketDataIntegrity(),
+      autoObs: getAutoIntelligenceCycleState(),
+      forwardTest: (() => {
+        const d = loadForwardTestData();
+        const s = d.activeSession ?? d.completedSessions[0] ?? null;
+        return s ? { observations: s.observations, latestDirection: s.observations[0]?.direction ?? null } : null;
+      })(),
+      backtest: (() => {
+        const r = loadFuturesStrategyBacktestHistory()[0] ?? null;
+        return r ? { returnPercent: r.metrics.returnPercent, winRate: r.metrics.winRate } : null;
+      })(),
+      riskGate: loadLatestSignalQualityScore() ? { riskStatus: loadLatestSignalQualityScore().input.riskStatus } : null,
+    }),
     latestIntegrity: loadLatestMarketDataIntegrity(),
     autoCycleState: getAutoIntelligenceCycleState(),
     autoCycleActive: isAutoIntelligenceCycleActive(),
@@ -583,7 +597,7 @@ export default function CommandCenterDashboard() {
           title="Signal Quality Intelligence"
           subtitle="Latest transparent paper-signal evaluation"
           icon={<Gauge size={17} />}
-          badge="Informational only  --  paper only"
+          badge={localSnapshot.evidenceStack.completeness === "complete" ? "Evidence: complete" : localSnapshot.evidenceStack.completeness === "partial" ? "Evidence: partial" : "Evidence: missing"}
           className="mt-6"
         >
           {localSnapshot.latestSignalQuality ? (
@@ -602,6 +616,30 @@ export default function CommandCenterDashboard() {
               <p className="mt-4 text-xs leading-5" style={{ color: "#6b7280" }}>
                 Signal Quality Score is informational only. Risk Engine remains the final gate and no order is created.
               </p>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Market integrity</p>
+                  <p className="mt-1 text-xs" style={{ color: localSnapshot.evidenceStack.hasMarketIntegrity ? "#22c55e" : "#4b5563" }}>{localSnapshot.evidenceStack.hasMarketIntegrity ? "Available" : "Missing"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Auto observations</p>
+                  <p className="mt-1 text-xs" style={{ color: localSnapshot.evidenceStack.hasAutoObservations ? "#22c55e" : "#4b5563" }}>{localSnapshot.evidenceStack.hasAutoObservations ? localSnapshot.evidenceStack.autoObsCount + " records" : "None"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Forward test</p>
+                  <p className="mt-1 text-xs" style={{ color: localSnapshot.evidenceStack.hasForwardTest ? "#22c55e" : "#4b5563" }}>{localSnapshot.evidenceStack.hasForwardTest ? localSnapshot.evidenceStack.forwardObsCount + " obs" : "None"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Backtest</p>
+                  <p className="mt-1 text-xs" style={{ color: localSnapshot.evidenceStack.hasBacktest ? "#22c55e" : "#4b5563" }}>{localSnapshot.evidenceStack.hasBacktest ? localSnapshot.evidenceStack.backtestReturn?.toFixed(1) + "%" : "None"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Risk gate</p>
+                  <p className="mt-1 text-xs" style={{ color: localSnapshot.evidenceStack.hasRiskGate ? "#22c55e" : "#4b5563" }}>{localSnapshot.evidenceStack.hasRiskGate ? localSnapshot.evidenceStack.riskGateStatus : "N/A"}</p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs" style={{ color: "#6b7280" }}>
+                Evidence stack does not generate trades or bypass risk gates.</p>
             </>
           ) : (
             <p className="rounded-lg p-4 text-sm" style={{ color: "#6b7280", background: "rgba(201, 215, 227, 0.025)" }}>

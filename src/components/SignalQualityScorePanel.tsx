@@ -19,7 +19,10 @@ import { generateFuturesStrategySetup } from "@/lib/futuresStrategyProfiles";
 import { loadFuturesStrategyBacktestHistory } from "@/lib/futuresStrategyBacktest";
 import { loadForwardTestData, type ForwardTestRiskStatus } from "@/lib/forwardTestSession";
 import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
+import { getAutoIntelligenceCycleState } from "@/lib/autoIntelligenceCycle";
+import { loadLatestFuturesStrategyBacktest } from "@/lib/futuresStrategyBacktest";
 import {
+  buildEvidenceStack,
   MAX_SIGNAL_QUALITY_HISTORY,
   SIGNAL_QUALITY_PROFILES,
   clearSignalQualityHistory,
@@ -68,6 +71,20 @@ export default function SignalQualityScorePanel() {
   );
   const [error, setError] = useState<string | null>(null);
   const [integrityReport] = useState(() => loadLatestMarketDataIntegrity());
+  const [evidenceStack] = useState(() => buildEvidenceStack({
+    integrity: loadLatestMarketDataIntegrity(),
+    autoObs: getAutoIntelligenceCycleState(),
+    forwardTest: (() => {
+      const d = loadForwardTestData();
+      const s = d.activeSession ?? d.completedSessions[0] ?? null;
+      return s ? { observations: s.observations, latestDirection: s.observations[0]?.direction ?? null } : null;
+    })(),
+    backtest: (() => {
+      const r = loadLatestFuturesStrategyBacktest();
+      return r ? { returnPercent: r.metrics.returnPercent, winRate: r.metrics.winRate } : null;
+    })(),
+    riskGate: activeRecord ? { riskStatus: activeRecord.input.riskStatus } : null,
+  }));
 
   const handleGenerate = () => {
     setError(null);
@@ -254,6 +271,130 @@ export default function SignalQualityScorePanel() {
           </p>
         </div>
       )}
+
+      {/* Evidence Stack */}
+      <div
+        className="mt-4 rounded-lg p-4"
+        style={{ background: "rgba(201,215,227,0.02)", border: "1px solid rgba(201,215,227,0.06)" }}
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-xs font-medium uppercase tracking-[0.08em]" style={{ color: "#9ca3af" }}>Evidence Stack</h4>
+          <span
+            className="rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.06em]"
+            style={{
+              color: evidenceStack.completeness === "complete" ? "#22c55e" : evidenceStack.completeness === "partial" ? "#f59e0b" : "#ef4444",
+              border: "1px solid rgba(156,163,175,0.18)",
+            }}
+          >
+            {evidenceStack.completeness === "complete" ? "Complete" : evidenceStack.completeness === "partial" ? "Partial" : "Missing"}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Market data quality */}
+          <div className="rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Market data quality</p>
+            {evidenceStack.hasMarketIntegrity ? (
+              <div className="mt-1 space-y-0.5">
+                <p className="data-mono text-[10px]" style={{ color: "#9ca3af" }}>Score: {evidenceStack.integrityScore}/100</p>
+                <p className="text-[10px]" style={{ color: "#6b7280" }}>Source: {evidenceStack.integritySource?.replace(/_/g, " ")}</p>
+                <p className="text-[10px]" style={{ color: "#6b7280" }}>Freshness: {evidenceStack.integrityFreshness}</p>
+                <p className="text-[10px]" style={{ color: "#6b7280" }}>Readiness: {evidenceStack.integrityReadiness?.replace(/_/g, " ")}</p>
+              </div>
+            ) : (
+              <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>Not available</p>
+            )}
+          </div>
+          {/* Auto observations */}
+          <div className="rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Auto observations</p>
+            {evidenceStack.hasAutoObservations ? (
+              <div className="mt-1 space-y-0.5">
+                <p className="data-mono text-[10px]" style={{ color: "#9ca3af" }}>Total: {evidenceStack.autoObsCount}</p>
+                <p className="text-[10px]" style={{ color: "#6b7280" }}>Latest: {evidenceStack.autoObsLatestSymbol ?? "N/A"}</p>
+                <p className="data-mono text-[10px]" style={{ color: "#6b7280" }}>Score: {evidenceStack.autoObsLatestScore ?? "N/A"}</p>
+              </div>
+            ) : (
+              <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>None recorded</p>
+            )}
+          </div>
+          {/* Forward-test evidence */}
+          <div className="rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Forward-test evidence</p>
+            {evidenceStack.hasForwardTest ? (
+              <div className="mt-1 space-y-0.5">
+                <p className="data-mono text-[10px]" style={{ color: "#9ca3af" }}>Observations: {evidenceStack.forwardObsCount}</p>
+                <p className="text-[10px]" style={{ color: "#6b7280" }}>Latest: {evidenceStack.forwardLatestDirection ?? "N/A"}</p>
+              </div>
+            ) : (
+              <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>No observations</p>
+            )}
+          </div>
+          {/* Backtest evidence */}
+          <div className="rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Backtest evidence</p>
+            {evidenceStack.hasBacktest ? (
+              <div className="mt-1 space-y-0.5">
+                <p className="data-mono text-[10px]" style={{ color: evidenceStack.backtestReturn !== null && evidenceStack.backtestReturn >= 0 ? "#22c55e" : "#ef4444" }}>Return: {evidenceStack.backtestReturn?.toFixed(2)}%</p>
+                <p className="data-mono text-[10px]" style={{ color: "#6b7280" }}>Win rate: {evidenceStack.backtestWinRate?.toFixed(1)}%</p>
+              </div>
+            ) : (
+              <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>No backtest</p>
+            )}
+          </div>
+          {/* Risk gate state */}
+          <div className="rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Risk gate state</p>
+            {evidenceStack.hasRiskGate ? (
+              <p className="mt-1 data-mono text-[10px]" style={{ color: "#9ca3af" }}>{evidenceStack.riskGateStatus}</p>
+            ) : (
+              <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>Not evaluated</p>
+            )}
+          </div>
+          {/* Final score classification */}
+          <div className="rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Score classification</p>
+            {activeRecord ? (
+              <div className="mt-1 space-y-0.5">
+                <p className="data-mono text-[10px]" style={{ color: recordColor }}>{activeRecord.score}/100 -- {activeRecord.label}</p>
+                <p className="text-[10px]" style={{ color: "#6b7280" }}>{activeRecord.evidenceStatus}</p>
+              </div>
+            ) : (
+              <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>No score generated</p>
+            )}
+          </div>
+        </div>
+
+        {/* Positive / Negative / Missing factors */}
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#22c55e" }}>Positive factors</p>
+            {evidenceStack.positiveFactors.length > 0 ? (
+              <ul className="mt-1 space-y-0.5">
+                {evidenceStack.positiveFactors.map((f, i) => <li key={i} className="text-[10px]" style={{ color: "#9ca3af" }}>+ {f}</li>)}
+              </ul>
+            ) : <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>None</p>}
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#ef4444" }}>Negative factors</p>
+            {evidenceStack.negativeFactors.length > 0 ? (
+              <ul className="mt-1 space-y-0.5">
+                {evidenceStack.negativeFactors.map((f, i) => <li key={i} className="text-[10px]" style={{ color: "#9ca3af" }}>- {f}</li>)}
+              </ul>
+            ) : <p className="mt-1 text-[10px]" style={{ color: "#4b5563" }}>None</p>}
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#9ca3af" }}>Missing evidence</p>
+            {evidenceStack.missingFactors.length > 0 ? (
+              <ul className="mt-1 space-y-0.5">
+                {evidenceStack.missingFactors.map((f, i) => <li key={i} className="text-[10px]" style={{ color: "#6b7280" }}>{f}</li>)}
+              </ul>
+            ) : <p className="mt-1 text-[10px]" style={{ color: "#22c55e" }}>All evidence present</p>}
+          </div>
+        </div>
+
+        <p className="mt-3 text-[10px]" style={{ color: "#4b5563" }}>Paper-only / informational only. Evidence stack does not generate trades or bypass risk gates.</p>
+      </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div>

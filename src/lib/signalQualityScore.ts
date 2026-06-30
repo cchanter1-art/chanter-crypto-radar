@@ -32,6 +32,32 @@ export type SignalQualityBacktestStatus = "positive" | "weak" | "none";
 export type SignalQualityForwardStatus = "consistent" | "mixed" | "weak" | "none";
 export type SignalQualityEvidenceStatus = "backtest + forward" | "backtest" | "forward" | "none";
 
+export type EvidenceCompleteness = "complete" | "partial" | "missing";
+
+export interface EvidenceStackSnapshot {
+  hasMarketIntegrity: boolean;
+  integrityScore: number | null;
+  integritySource: string | null;
+  integrityFreshness: string | null;
+  integrityReadiness: string | null;
+  hasAutoObservations: boolean;
+  autoObsCount: number;
+  autoObsLatestSymbol: string | null;
+  autoObsLatestScore: number | null;
+  hasForwardTest: boolean;
+  forwardObsCount: number;
+  forwardLatestDirection: string | null;
+  hasBacktest: boolean;
+  backtestReturn: number | null;
+  backtestWinRate: number | null;
+  hasRiskGate: boolean;
+  riskGateStatus: string | null;
+  completeness: EvidenceCompleteness;
+  positiveFactors: string[];
+  negativeFactors: string[];
+  missingFactors: string[];
+}
+
 export interface SignalQualityBacktestEvidence {
   status: SignalQualityBacktestStatus;
   runId: string | null;
@@ -458,6 +484,104 @@ export function getSignalQualityForwardEvidence(
     blockedCount,
     waitCount,
     directionConsistencyPercent: round(directionConsistencyPercent),
+  };
+}
+
+export function buildEvidenceStack(opts: {
+  integrity?: { integrityScore: number; source: string; freshnessStatus: string; readinessStatus: string } | null;
+  autoObs?: { autoObservations: unknown[]; observationsCreated: number; lastSymbol: string | null; lastScore: number | null } | null;
+  forwardTest?: { observations: unknown[]; latestDirection: string | null } | null;
+  backtest?: { returnPercent: number; winRate: number } | null;
+  riskGate?: { riskStatus: string } | null;
+}): EvidenceStackSnapshot {
+  const integrity = opts.integrity ?? null;
+  const autoObs = opts.autoObs ?? null;
+  const forwardTest = opts.forwardTest ?? null;
+  const backtest = opts.backtest ?? null;
+  const riskGate = opts.riskGate ?? null;
+
+  const hasMarketIntegrity = integrity !== null;
+  const hasAutoObservations = autoObs !== null && Array.isArray(autoObs.autoObservations) && autoObs.autoObservations.length > 0;
+  const hasForwardTest = forwardTest !== null && Array.isArray(forwardTest.observations) && forwardTest.observations.length > 0;
+  const hasBacktest = backtest !== null;
+  const hasRiskGate = riskGate !== null;
+
+  const positiveFactors: string[] = [];
+  const negativeFactors: string[] = [];
+  const missingFactors: string[] = [];
+
+  if (hasMarketIntegrity && integrity) {
+    if (integrity.integrityScore >= 70) {
+      positiveFactors.push("Market data integrity score " + integrity.integrityScore + "/100 (good)");
+    } else if (integrity.integrityScore < 50) {
+      negativeFactors.push("Market data integrity score " + integrity.integrityScore + "/100 (low)");
+    }
+    if (integrity.freshnessStatus === "stale" || integrity.freshnessStatus === "delayed") {
+      negativeFactors.push("Market data freshness: " + integrity.freshnessStatus);
+    }
+    if (integrity.readinessStatus === "blocked") {
+      negativeFactors.push("Market data readiness: blocked");
+    }
+    if (integrity.source !== "LIVE_READ_ONLY") {
+      negativeFactors.push("Data source is " + integrity.source.replace(/_/g, " ") + " (not live)");
+    }
+  } else {
+    missingFactors.push("Market data integrity report");
+  }
+
+  if (hasAutoObservations && autoObs) {
+    positiveFactors.push("Auto Intelligence observations: " + autoObs.autoObservations.length + " recorded");
+  } else {
+    missingFactors.push("Auto Intelligence observations");
+  }
+
+  if (hasForwardTest && forwardTest) {
+    positiveFactors.push("Forward test observations: " + forwardTest.observations.length + " recorded");
+  } else {
+    missingFactors.push("Forward test observations");
+  }
+
+  if (hasBacktest && backtest) {
+    if (backtest.returnPercent > 0) {
+      positiveFactors.push("Backtest return: " + backtest.returnPercent.toFixed(2) + "%");
+    } else {
+      negativeFactors.push("Backtest return: " + backtest.returnPercent.toFixed(2) + "% (negative)");
+    }
+  } else {
+    missingFactors.push("Futures strategy backtest");
+  }
+
+  if (hasRiskGate && riskGate) {
+    positiveFactors.push("Risk gate status: " + riskGate.riskStatus);
+  } else {
+    missingFactors.push("Risk gate evaluation");
+  }
+
+  const presentCount = [hasMarketIntegrity, hasAutoObservations, hasForwardTest, hasBacktest, hasRiskGate].filter(Boolean).length;
+  const completeness = presentCount >= 4 ? "complete" : presentCount >= 1 ? "partial" : "missing";
+
+  return {
+    hasMarketIntegrity,
+    integrityScore: integrity ? integrity.integrityScore : null,
+    integritySource: integrity ? integrity.source : null,
+    integrityFreshness: integrity ? integrity.freshnessStatus : null,
+    integrityReadiness: integrity ? integrity.readinessStatus : null,
+    hasAutoObservations,
+    autoObsCount: autoObs ? (Array.isArray(autoObs.autoObservations) ? autoObs.autoObservations.length : 0) : 0,
+    autoObsLatestSymbol: autoObs ? autoObs.lastSymbol : null,
+    autoObsLatestScore: autoObs ? autoObs.lastScore : null,
+    hasForwardTest,
+    forwardObsCount: forwardTest ? (Array.isArray(forwardTest.observations) ? forwardTest.observations.length : 0) : 0,
+    forwardLatestDirection: forwardTest ? forwardTest.latestDirection : null,
+    hasBacktest,
+    backtestReturn: backtest ? backtest.returnPercent : null,
+    backtestWinRate: backtest ? backtest.winRate : null,
+    hasRiskGate,
+    riskGateStatus: riskGate ? riskGate.riskStatus : null,
+    completeness,
+    positiveFactors,
+    negativeFactors,
+    missingFactors,
   };
 }
 

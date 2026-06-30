@@ -239,8 +239,139 @@ try {
   assert.equal(parsedLegacy.ok, true, "Older schema-v1 backups must remain compatible");
   assert.deepEqual(parsedLegacy.value.signalQualityHistory, []);
 
+  // 11. Evidence stack: no evidence available
+  {
+    const stack = quality.buildEvidenceStack({});
+    assert.equal(stack.hasMarketIntegrity, false);
+    assert.equal(stack.hasAutoObservations, false);
+    assert.equal(stack.hasForwardTest, false);
+    assert.equal(stack.hasBacktest, false);
+    assert.equal(stack.hasRiskGate, false);
+    assert.equal(stack.completeness, "missing");
+    assert.ok(stack.missingFactors.length >= 5, "Should list all missing factors");
+    assert.equal(stack.positiveFactors.length, 0);
+    assert.equal(stack.negativeFactors.length, 0);
+  }
+
+  // 12. Evidence stack: good market integrity improves evidence status
+  {
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 85, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+    });
+    assert.equal(stack.hasMarketIntegrity, true);
+    assert.equal(stack.integrityScore, 85);
+    assert.ok(stack.positiveFactors.some((f) => f.includes("85/100")), "Should have positive integrity factor");
+    assert.equal(stack.negativeFactors.length, 0, "Good integrity should have no negative factors");
+    assert.equal(stack.completeness, "partial");
+  }
+
+  // 13. Evidence stack: stale/blocked/low integrity penalizes
+  {
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 30, source: "LOCAL_MOCK", freshnessStatus: "stale", readinessStatus: "blocked" },
+    });
+    assert.ok(stack.negativeFactors.some((f) => f.includes("30/100")), "Low score should be negative");
+    assert.ok(stack.negativeFactors.some((f) => f.includes("stale")), "Stale should be negative");
+    assert.ok(stack.negativeFactors.some((f) => f.includes("blocked")), "Blocked should be negative");
+    assert.ok(stack.negativeFactors.some((f) => f.includes("not live")), "Non-live source should be negative");
+  }
+
+  // 14. Evidence stack: auto observations appear but do not generate trades
+  {
+    const stack = quality.buildEvidenceStack({
+      autoObs: { autoObservations: [{ id: "test" }], observationsCreated: 1, lastSymbol: "BTCUSDT", lastScore: 75 },
+    });
+    assert.equal(stack.hasAutoObservations, true);
+    assert.equal(stack.autoObsCount, 1);
+    assert.equal(stack.autoObsLatestSymbol, "BTCUSDT");
+    assert.ok(stack.positiveFactors.some((f) => f.includes("1 recorded")), "Should have positive auto obs factor");
+    // Verify no trade/position/order fields on stack
+    assert.equal(stack.tradeId, undefined);
+    assert.equal(stack.positionId, undefined);
+    assert.equal(stack.orderId, undefined);
+  }
+
+  // 15. Evidence stack: forward-test context appears when available
+  {
+    const stack = quality.buildEvidenceStack({
+      forwardTest: { observations: [{ id: "obs1" }, { id: "obs2" }], latestDirection: "LONG" },
+    });
+    assert.equal(stack.hasForwardTest, true);
+    assert.equal(stack.forwardObsCount, 2);
+    assert.equal(stack.forwardLatestDirection, "LONG");
+  }
+
+  // 16. Evidence stack: backtest context appears when available
+  {
+    const stack = quality.buildEvidenceStack({
+      backtest: { returnPercent: 12.5, winRate: 60 },
+    });
+    assert.equal(stack.hasBacktest, true);
+    assert.equal(stack.backtestReturn, 12.5);
+    assert.ok(stack.positiveFactors.some((f) => f.includes("12.50%")), "Positive backtest should be positive factor");
+  }
+
+  // 17. Evidence stack: negative backtest return is a negative factor
+  {
+    const stack = quality.buildEvidenceStack({
+      backtest: { returnPercent: -5.0, winRate: 30 },
+    });
+    assert.ok(stack.negativeFactors.some((f) => f.includes("-5.00%")), "Negative return should be negative factor");
+  }
+
+  // 18. Evidence stack: complete evidence yields "complete" completeness
+  {
+    const stack = quality.buildEvidenceStack({
+      integrity: { integrityScore: 80, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+      autoObs: { autoObservations: [{ id: "a" }], observationsCreated: 1, lastSymbol: "BTCUSDT", lastScore: 80 },
+      forwardTest: { observations: [{ id: "f" }], latestDirection: "LONG" },
+      backtest: { returnPercent: 10, winRate: 55 },
+      riskGate: { riskStatus: "WAIT" },
+    });
+    assert.equal(stack.completeness, "complete");
+    assert.equal(stack.missingFactors.length, 0);
+  }
+
+  // 19. Evidence stack: malformed legacy localStorage does not crash
+  {
+    // buildEvidenceStack with null/undefined inputs should not throw
+    const stack = quality.buildEvidenceStack({
+      integrity: null,
+      autoObs: null,
+      forwardTest: null,
+      backtest: null,
+      riskGate: null,
+    });
+    assert.equal(stack.completeness, "missing");
+    assert.equal(stack.positiveFactors.length, 0);
+  }
+
+  // 20. Evidence stack: no paper positions created
+  {
+    store.clear();
+    quality.buildEvidenceStack({
+      integrity: { integrityScore: 90, source: "LIVE_READ_ONLY", freshnessStatus: "current", readinessStatus: "ready" },
+      autoObs: { autoObservations: [{ id: "x" }], observationsCreated: 1, lastSymbol: "ETHUSDT", lastScore: 90 },
+    });
+    const positions = futuresApi.loadFuturesPaperPositions();
+    assert.equal(positions.length, 0, "Evidence stack must not create paper positions");
+    const trades = futuresApi.loadFuturesPaperHistory();
+    assert.equal(trades.length, 0, "Evidence stack must not create paper trades");
+  }
+
+  // 21. Import/export backward compatibility remains safe
+  {
+    // Existing records without evidence stack should still load
+    const records = quality.loadSignalQualityHistory();
+    for (const r of records) {
+      // evidenceStack is not stored on records, so this is just verifying records load
+      assert.ok(r.id, "Record must have id");
+      assert.ok(r.score !== undefined, "Record must have score");
+    }
+  }
+
   console.log(
-    "Signal Quality Score verification passed: deterministic scoring, safety caps, evidence effects, history, backup validation, and latest-score reader.",
+    "Signal Quality Score verification passed: deterministic scoring, safety caps, evidence effects, history, backup validation, latest-score reader, evidence stack (no evidence, good/stale integrity, auto observations, forward-test, backtest, complete/missing, backward compat, no trades, no positions).",
   );
 } finally {
   await server.close();
