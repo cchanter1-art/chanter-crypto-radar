@@ -5,9 +5,12 @@ import {
   type BacktestRun,
 } from "@/lib/paperBacktestEngine";
 import {
+  DEFAULT_PAPER_SIGNAL_SENSITIVITY,
   isValidPaperSignal,
+  isPaperSignalSensitivity,
   MAX_PAPER_SIGNAL_HISTORY,
   type PaperSignal,
+  type PaperSignalSensitivity,
 } from "@/lib/paperSignalEngine";
 import {
   DEFAULT_PAPER_RISK_SETTINGS,
@@ -47,6 +50,7 @@ export interface LocalDataBackup {
   paperTrades: PaperTrade[];
   priceAlerts: PriceAlert[];
   paperSignals: PaperSignal[];
+  signalSensitivity: PaperSignalSensitivity;
   backtestRuns: BacktestRun[];
   riskControllerSettings: PaperRiskSettings;
   riskJournal: PaperRiskJournalEntry[];
@@ -56,6 +60,7 @@ export interface LocalDataBackup {
 export interface ImportedLocalDataBackup {
   state: AppState;
   paperSignals: PaperSignal[];
+  signalSensitivity: PaperSignalSensitivity;
   backtestRuns: BacktestRun[];
   riskSettings: PaperRiskSettings;
   riskJournal: PaperRiskJournalEntry[];
@@ -229,6 +234,18 @@ function validatePaperSignals(value: unknown): ValidationResult<PaperSignal[]> {
   return { ok: true, value: signals.slice(0, MAX_PAPER_SIGNAL_HISTORY) };
 }
 
+function validateSignalSensitivity(
+  value: unknown,
+): ValidationResult<PaperSignalSensitivity> {
+  if (value === undefined) {
+    return { ok: true, value: DEFAULT_PAPER_SIGNAL_SENSITIVITY };
+  }
+  if (!isPaperSignalSensitivity(value)) {
+    return { ok: false, message: "Backup signal sensitivity is invalid." };
+  }
+  return { ok: true, value };
+}
+
 function validateBacktestRuns(value: unknown): ValidationResult<BacktestRun[]> {
   if (value === undefined) {
     return { ok: true, value: [] };
@@ -342,6 +359,7 @@ export function createLocalDataBackup(
   backtestRuns: BacktestRun[] = [],
   riskSettings: PaperRiskSettings = DEFAULT_PAPER_RISK_SETTINGS,
   riskJournal: PaperRiskJournalEntry[] = [],
+  signalSensitivity: PaperSignalSensitivity = DEFAULT_PAPER_SIGNAL_SENSITIVITY,
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -354,6 +372,9 @@ export function createLocalDataBackup(
       .filter(isValidPaperSignal)
       .slice(0, MAX_PAPER_SIGNAL_HISTORY)
       .map((signal) => ({ ...signal })),
+    signalSensitivity: isPaperSignalSensitivity(signalSensitivity)
+      ? signalSensitivity
+      : DEFAULT_PAPER_SIGNAL_SENSITIVITY,
     backtestRuns: backtestRuns
       .map(normalizeBacktestRun)
       .filter((run): run is BacktestRun => run !== null)
@@ -418,6 +439,11 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${paperSignals.message}` };
   }
 
+  const signalSensitivity = validateSignalSensitivity(parsed.signalSensitivity);
+  if (signalSensitivity.ok === false) {
+    return { ok: false, message: `Import failed. ${signalSensitivity.message}` };
+  }
+
   const backtestRuns = validateBacktestRuns(parsed.backtestRuns);
   if (backtestRuns.ok === false) {
     return { ok: false, message: `Import failed. ${backtestRuns.message}` };
@@ -448,6 +474,7 @@ export function parseLocalDataBackup(
         settings: settings.value,
       },
       paperSignals: paperSignals.value,
+      signalSensitivity: signalSensitivity.value,
       backtestRuns: backtestRuns.value,
       riskSettings: riskSettings.value,
       riskJournal: riskJournal.value,

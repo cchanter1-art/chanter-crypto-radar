@@ -2,6 +2,7 @@ import type { Coin, PortfolioPosition, PriceAlert } from "@/types";
 
 export type PaperSignalLabel = "BUY" | "SELL" | "HOLD" | "AVOID";
 export type PaperSignalConfidence = "Low" | "Medium" | "High";
+export type PaperSignalSensitivity = "Conservative" | "Balanced" | "Aggressive";
 
 export interface PaperSignal {
   id: string;
@@ -21,11 +22,14 @@ interface GeneratePaperSignalsInput {
   priceStatus: "loading" | "live" | "fallback";
   totalValue: number;
   totalPLPercent: number;
+  sensitivity?: PaperSignalSensitivity;
   timestamp?: string;
 }
 
 export const PAPER_SIGNAL_STORAGE_KEY = "chanter-paper-signal-history";
+export const PAPER_SIGNAL_SENSITIVITY_STORAGE_KEY = "chanter-paper-signal-sensitivity";
 export const MAX_PAPER_SIGNAL_HISTORY = 50;
+export const DEFAULT_PAPER_SIGNAL_SENSITIVITY: PaperSignalSensitivity = "Balanced";
 
 const SUPPORTED_COIN_IDS = new Set(["btc", "eth", "sol", "ada", "avax"]);
 const SUPPORTED_SYMBOLS_BY_ID = new Map([
@@ -37,6 +41,16 @@ const SUPPORTED_SYMBOLS_BY_ID = new Map([
 ]);
 const SIGNAL_LABELS = new Set<PaperSignalLabel>(["BUY", "SELL", "HOLD", "AVOID"]);
 const CONFIDENCE_LEVELS = new Set<PaperSignalConfidence>(["Low", "Medium", "High"]);
+const SIGNAL_SENSITIVITIES = new Set<PaperSignalSensitivity>([
+  "Conservative",
+  "Balanced",
+  "Aggressive",
+]);
+const ACTION_SCORE_THRESHOLDS: Record<PaperSignalSensitivity, number> = {
+  Conservative: 3,
+  Balanced: 2,
+  Aggressive: 1,
+};
 const ALERT_PROXIMITY_PERCENT = 2;
 const OVERSIZED_ALLOCATION_PERCENT = 50;
 const HIGH_LOSS_PERCENT = -25;
@@ -162,8 +176,11 @@ export function generatePaperSignals({
   priceStatus,
   totalValue,
   totalPLPercent,
+  sensitivity = DEFAULT_PAPER_SIGNAL_SENSITIVITY,
   timestamp = new Date().toISOString(),
 }: GeneratePaperSignalsInput): PaperSignal[] {
+  const actionScoreThreshold = ACTION_SCORE_THRESHOLDS[sensitivity];
+
   return coins
     .filter((coin) => SUPPORTED_COIN_IDS.has(coin.id))
     .map((coin) => {
@@ -191,9 +208,13 @@ export function generatePaperSignals({
 
       if (hasExtremeMove) {
         label = "AVOID";
-      } else if (score <= -2) {
+      } else if (score <= -actionScoreThreshold) {
         label = hasHoldings ? "SELL" : "AVOID";
-      } else if (score >= 2 && !hasConcentrationWarning && !hasHighLossWarning) {
+      } else if (
+        score >= actionScoreThreshold &&
+        !hasConcentrationWarning &&
+        !hasHighLossWarning
+      ) {
         label = "BUY";
       } else {
         label = "HOLD";
@@ -272,6 +293,42 @@ export function savePaperSignalHistory(signals: PaperSignal[]): boolean {
 export function clearPaperSignalHistory(): boolean {
   try {
     localStorage.removeItem(PAPER_SIGNAL_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isPaperSignalSensitivity(value: unknown): value is PaperSignalSensitivity {
+  return typeof value === "string" &&
+    SIGNAL_SENSITIVITIES.has(value as PaperSignalSensitivity);
+}
+
+export function loadPaperSignalSensitivity(): PaperSignalSensitivity {
+  try {
+    const stored = localStorage.getItem(PAPER_SIGNAL_SENSITIVITY_STORAGE_KEY);
+    return isPaperSignalSensitivity(stored) ? stored : DEFAULT_PAPER_SIGNAL_SENSITIVITY;
+  } catch {
+    return DEFAULT_PAPER_SIGNAL_SENSITIVITY;
+  }
+}
+
+export function savePaperSignalSensitivity(
+  sensitivity: PaperSignalSensitivity,
+): boolean {
+  if (!isPaperSignalSensitivity(sensitivity)) return false;
+
+  try {
+    localStorage.setItem(PAPER_SIGNAL_SENSITIVITY_STORAGE_KEY, sensitivity);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearPaperSignalSensitivity(): boolean {
+  try {
+    localStorage.removeItem(PAPER_SIGNAL_SENSITIVITY_STORAGE_KEY);
     return true;
   } catch {
     return false;

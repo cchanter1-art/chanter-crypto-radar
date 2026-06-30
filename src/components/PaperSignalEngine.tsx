@@ -4,6 +4,7 @@ import AddTradeModal from "@/components/AddTradeModal";
 import { useAppState, usePortfolio } from "@/context/AppContext";
 import {
   clearPaperSignalHistory,
+  loadPaperSignalSensitivity,
   generatePaperSignals,
   loadPaperSignalHistory,
   MAX_PAPER_SIGNAL_HISTORY,
@@ -54,6 +55,7 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
   const { state, dispatch, coins, priceStatus } = useAppState();
   const { positions, totalValue, totalPLPercent } = usePortfolio();
   const [history, setHistory] = useState<PaperSignal[]>(loadPaperSignalHistory);
+  const [sensitivity] = useState(loadPaperSignalSensitivity);
   const [riskSettings] = useState(loadPaperRiskSettings);
   const [selectedSignal, setSelectedSignal] = useState<SelectedPaperSignal | null>(null);
   const [gateResult, setGateResult] = useState<{
@@ -76,6 +78,7 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
       priceStatus,
       totalValue,
       totalPLPercent,
+      sensitivity,
     });
     const nextHistory = [...generatedSignals, ...history].slice(0, MAX_PAPER_SIGNAL_HISTORY);
 
@@ -151,12 +154,20 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
           </p>
         </div>
 
-        <span
-          className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.08em]"
-          style={{ color: "#cc9258", border: "1px solid rgba(204,146,88,0.24)" }}
-        >
-          Local / Paper
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.08em]"
+            style={{ color: "#9ca3af", border: "1px solid rgba(201,215,227,0.12)" }}
+          >
+            Sensitivity · {sensitivity}
+          </span>
+          <span
+            className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.08em]"
+            style={{ color: "#cc9258", border: "1px solid rgba(204,146,88,0.24)" }}
+          >
+            Local / Paper
+          </span>
+        </div>
       </div>
 
       <div

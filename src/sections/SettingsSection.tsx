@@ -8,9 +8,15 @@ import {
   parseLocalDataBackup,
 } from "@/lib/localDataBackup";
 import {
+  clearPaperSignalSensitivity,
   clearPaperSignalHistory,
+  DEFAULT_PAPER_SIGNAL_SENSITIVITY,
+  isPaperSignalSensitivity,
+  loadPaperSignalSensitivity,
   loadPaperSignalHistory,
+  savePaperSignalSensitivity,
   savePaperSignalHistory,
+  type PaperSignalSensitivity,
 } from "@/lib/paperSignalEngine";
 import {
   clearBacktestHistory,
@@ -61,6 +67,10 @@ export default function SettingsSection() {
   const [riskSettings, setRiskSettings] = useState<PaperRiskSettings>(loadPaperRiskSettings);
   const [riskJournal, setRiskJournal] = useState(loadPaperRiskJournal);
   const [riskStatus, setRiskStatus] = useState<DataStatus | null>(null);
+  const [signalSensitivity, setSignalSensitivity] =
+    useState<PaperSignalSensitivity>(loadPaperSignalSensitivity);
+  const [signalSensitivityStatus, setSignalSensitivityStatus] =
+    useState<DataStatus | null>(null);
 
   const handleSave = () => {
     dispatch({
@@ -81,6 +91,7 @@ export default function SettingsSection() {
       loadBacktestHistory(),
       loadPaperRiskSettings(),
       loadPaperRiskJournal(),
+      loadPaperSignalSensitivity(),
     );
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -117,21 +128,24 @@ export default function SettingsSection() {
       const previousBacktests = loadBacktestHistory();
       const previousRiskSettings = loadPaperRiskSettings();
       const previousRiskJournal = loadPaperRiskJournal();
+      const previousSignalSensitivity = loadPaperSignalSensitivity();
 
       const didSaveLocalHistories =
         savePaperSignalHistory(result.value.paperSignals) &&
         saveBacktestHistory(result.value.backtestRuns) &&
         savePaperRiskSettings(result.value.riskSettings) &&
-        savePaperRiskJournal(result.value.riskJournal);
+        savePaperRiskJournal(result.value.riskJournal) &&
+        savePaperSignalSensitivity(result.value.signalSensitivity);
 
       if (!didSaveLocalHistories) {
         savePaperSignalHistory(previousPaperSignals);
         saveBacktestHistory(previousBacktests);
         savePaperRiskSettings(previousRiskSettings);
         savePaperRiskJournal(previousRiskJournal);
+        savePaperSignalSensitivity(previousSignalSensitivity);
         setDataStatus({
           type: "error",
-          message: "Import failed. Local signal, backtest, or risk data could not be saved in this browser.",
+          message: "Import failed. Local signal, backtest, sensitivity, or risk data could not be saved in this browser.",
         });
         return;
       }
@@ -143,6 +157,8 @@ export default function SettingsSection() {
       });
       setRiskSettings(result.value.riskSettings);
       setRiskJournal(result.value.riskJournal);
+      setSignalSensitivity(result.value.signalSensitivity);
+      setSignalSensitivityStatus(null);
       setRiskStatus(null);
       setDataStatus({ type: "success", message: "Local backup imported." });
     } catch {
@@ -162,6 +178,7 @@ export default function SettingsSection() {
       const emptyState = createEmptyLocalAppState();
       dispatch({ type: "LOAD_STATE", payload: emptyState });
       clearPaperSignalHistory();
+      clearPaperSignalSensitivity();
       clearBacktestHistory();
       clearPaperRiskSettings();
       clearPaperRiskJournal();
@@ -171,6 +188,8 @@ export default function SettingsSection() {
       });
       setRiskSettings({ ...DEFAULT_PAPER_RISK_SETTINGS });
       setRiskJournal([]);
+      setSignalSensitivity(DEFAULT_PAPER_SIGNAL_SENSITIVITY);
+      setSignalSensitivityStatus(null);
       setRiskStatus(null);
       setDataStatus({ type: "success", message: "Local app data cleared." });
     }
@@ -214,6 +233,17 @@ export default function SettingsSection() {
   const updateRiskSetting = (key: keyof PaperRiskSettings, value: string) => {
     setRiskSettings((current) => ({ ...current, [key]: Number(value) }));
     setRiskStatus(null);
+  };
+
+  const handleSignalSensitivityChange = (value: string) => {
+    if (!isPaperSignalSensitivity(value)) return;
+
+    setSignalSensitivity(value);
+    setSignalSensitivityStatus(
+      savePaperSignalSensitivity(value)
+        ? { type: "success", message: `Signal sensitivity set to ${value}.` }
+        : { type: "error", message: "Signal sensitivity could not be saved in this browser." },
+    );
   };
 
   return (
@@ -313,6 +343,36 @@ export default function SettingsSection() {
                   dispatch({ type: "UPDATE_SETTINGS", payload: { autoRefresh: checked } })
                 }
               />
+            </div>
+            <div
+              style={{ borderTop: "1px solid rgba(201,215,227,0.06)" }}
+              className="pt-5"
+            >
+              <label htmlFor="signal-sensitivity" className="label-upper mb-2 block" style={{ color: "#9ca3af", fontSize: 12 }}>
+                Signal Sensitivity
+              </label>
+              <select
+                id="signal-sensitivity"
+                value={signalSensitivity}
+                onChange={(event) => handleSignalSensitivityChange(event.target.value)}
+                className="input-dark cursor-pointer"
+              >
+                <option value="Conservative">Conservative</option>
+                <option value="Balanced">Balanced</option>
+                <option value="Aggressive">Aggressive</option>
+              </select>
+              <p className="mt-2 text-xs" style={{ color: "#4b5563", lineHeight: 1.6 }}>
+                Signal sensitivity only affects paper signals. No real orders are placed.
+              </p>
+              {signalSensitivityStatus && (
+                <p
+                  role={signalSensitivityStatus.type === "error" ? "alert" : "status"}
+                  className="mt-2 text-xs"
+                  style={{ color: signalSensitivityStatus.type === "success" ? "#22c55e" : "#ef4444" }}
+                >
+                  {signalSensitivityStatus.message}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -557,7 +617,7 @@ export default function SettingsSection() {
             }}
           >
             Back up or restore your watchlist, paper trades, price alerts, paper signal history,
-            saved backtests, Risk Controller rules, Risk Journal, and app settings.
+            saved backtests, signal sensitivity, Risk Controller rules, Risk Journal, and app settings.
           </p>
           <p
             className="mb-5 text-xs"
