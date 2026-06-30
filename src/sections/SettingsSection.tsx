@@ -344,6 +344,24 @@ export default function SettingsSection() {
 
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
+              <label htmlFor="risk-default-capital" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+                Default paper capital (USD)
+              </label>
+              <input
+                id="risk-default-capital"
+                type="number"
+                min="100"
+                max="1000000000"
+                step="100"
+                value={riskSettings.defaultPaperCapital}
+                onChange={(event) => updateRiskSetting("defaultPaperCapital", event.target.value)}
+                className="input-dark"
+              />
+              <p className="mt-2 text-[10px]" style={{ color: "#4b5563", lineHeight: 1.5 }}>
+                Default paper capital is used only for sizing first signal-based paper trades.
+              </p>
+            </div>
+            <div>
               <label htmlFor="risk-max-allocation" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
                 Max allocation per coin (%)
               </label>

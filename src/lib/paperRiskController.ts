@@ -4,6 +4,7 @@ import type { PaperTrade, PortfolioPosition } from "@/types";
 export type PaperRiskDecisionType = "APPROVED" | "BLOCKED" | "REDUCED" | "WAIT";
 
 export interface PaperRiskSettings {
+  defaultPaperCapital: number;
   maxAllocationPerCoinPercent: number;
   maxTradeSizePercent: number;
   maxDrawdownWarningPercent: number;
@@ -46,6 +47,7 @@ export const PAPER_RISK_JOURNAL_STORAGE_KEY = "chanter-paper-risk-journal";
 export const MAX_PAPER_RISK_JOURNAL = 100;
 
 export const DEFAULT_PAPER_RISK_SETTINGS: PaperRiskSettings = {
+  defaultPaperCapital: 10_000,
   maxAllocationPerCoinPercent: 50,
   maxTradeSizePercent: 25,
   maxDrawdownWarningPercent: 20,
@@ -81,6 +83,13 @@ function copyDefaultSettings(): PaperRiskSettings {
 }
 
 export function validatePaperRiskSettings(settings: PaperRiskSettings): string | null {
+  if (
+    !Number.isFinite(settings.defaultPaperCapital) ||
+    settings.defaultPaperCapital < 100 ||
+    settings.defaultPaperCapital > 1_000_000_000
+  ) {
+    return "Default paper capital must be between $100 and $1,000,000,000.";
+  }
   if (
     !Number.isFinite(settings.maxAllocationPerCoinPercent) ||
     settings.maxAllocationPerCoinPercent < 1 ||
@@ -126,6 +135,9 @@ export function normalizePaperRiskSettings(value: unknown): PaperRiskSettings | 
   if (!isRecord(value)) return null;
 
   const settings: PaperRiskSettings = {
+    defaultPaperCapital: value.defaultPaperCapital === undefined
+      ? DEFAULT_PAPER_RISK_SETTINGS.defaultPaperCapital
+      : value.defaultPaperCapital as number,
     maxAllocationPerCoinPercent: value.maxAllocationPerCoinPercent as number,
     maxTradeSizePercent: value.maxTradeSizePercent as number,
     maxDrawdownWarningPercent: value.maxDrawdownWarningPercent as number,
@@ -299,14 +311,12 @@ export function evaluatePaperRisk({
     }
   }
 
-  if (totalValue <= 0) {
-    return createDecision(
-      "WAIT",
-      "No existing paper portfolio value is available for percentage sizing. Add a manual paper position before using signal-based trade creation.",
-    );
-  }
-
-  const standardMaxTradeValue = totalValue * settings.maxTradeSizePercent / 100;
+  const isFirstBuy = signal.label === "BUY" && totalValue <= 0;
+  const sizingPortfolioValue = isFirstBuy ? settings.defaultPaperCapital : totalValue;
+  const bootstrapReason = isFirstBuy
+    ? "Using default paper capital because no paper portfolio exists yet. "
+    : "";
+  const standardMaxTradeValue = sizingPortfolioValue * settings.maxTradeSizePercent / 100;
 
   if (signal.label === "SELL") {
     const holdingValue = holdings * currentPrice;
@@ -332,7 +342,10 @@ export function evaluatePaperRisk({
   const maxAllocationFraction = settings.maxAllocationPerCoinPercent / 100;
   const allocationCapacity = maxAllocationFraction >= 1
     ? Number.POSITIVE_INFINITY
-    : (maxAllocationFraction * totalValue - coinValue) / (1 - maxAllocationFraction);
+    : isFirstBuy
+      ? maxAllocationFraction * sizingPortfolioValue
+      : (maxAllocationFraction * sizingPortfolioValue - coinValue) /
+        (1 - maxAllocationFraction);
   const drawdownWarningActive = totalPLPercent <= -settings.maxDrawdownWarningPercent;
   const drawdownAdjustedMax = drawdownWarningActive
     ? standardMaxTradeValue / 2
@@ -359,7 +372,7 @@ export function evaluatePaperRisk({
 
     return createDecision(
       "REDUCED",
-      `Suggested paper trade size was reduced because ${reasons.join(" and ")}.`,
+      `${bootstrapReason}Suggested paper trade size was reduced because ${reasons.join(" and ")}.`,
       maxTradeValue,
       currentPrice,
     );
@@ -367,7 +380,7 @@ export function evaluatePaperRisk({
 
   return createDecision(
     "APPROVED",
-    `Signal passes the ${settings.maxAllocationPerCoinPercent}% allocation and ${settings.maxTradeSizePercent}% trade-size rules.`,
+    `${bootstrapReason}Signal passes the ${settings.maxAllocationPerCoinPercent}% allocation and ${settings.maxTradeSizePercent}% trade-size rules.`,
     standardMaxTradeValue,
     currentPrice,
   );

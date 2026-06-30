@@ -350,9 +350,7 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
         <AddTradeModal
           initialCoinId={selectedSignal.signal.coinId}
           initialType={selectedSignal.signal.label === "BUY" ? "buy" : "sell"}
-          initialAmount={selectedSignal.decision.decision === "REDUCED"
-            ? selectedSignal.decision.suggestedQuantity
-            : undefined}
+          initialAmount={selectedSignal.decision.suggestedQuantity}
           maxTradeValue={selectedSignal.decision.suggestedMaxTradeValue}
           lockSignalSelection
           onAdd={handleAddTrade}
