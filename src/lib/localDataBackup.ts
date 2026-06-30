@@ -20,6 +20,16 @@ import {
   type PaperRiskJournalEntry,
   type PaperRiskSettings,
 } from "@/lib/paperRiskController";
+import {
+  DEFAULT_FUTURES_PAPER_SETTINGS,
+  MAX_FUTURES_PAPER_HISTORY,
+  normalizeFuturesHistoryRecord,
+  normalizeFuturesPaperPosition,
+  normalizeFuturesPaperSettings,
+  type FuturesPaperHistoryRecord,
+  type FuturesPaperPosition,
+  type FuturesPaperSettings,
+} from "@/lib/futuresPaperEngine";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -54,6 +64,9 @@ export interface LocalDataBackup {
   backtestRuns: BacktestRun[];
   riskControllerSettings: PaperRiskSettings;
   riskJournal: PaperRiskJournalEntry[];
+  futuresPaperSettings: FuturesPaperSettings;
+  futuresPaperPositions: FuturesPaperPosition[];
+  futuresPaperHistory: FuturesPaperHistoryRecord[];
   settings: AppSettings;
 }
 
@@ -64,6 +77,9 @@ export interface ImportedLocalDataBackup {
   backtestRuns: BacktestRun[];
   riskSettings: PaperRiskSettings;
   riskJournal: PaperRiskJournalEntry[];
+  futuresSettings: FuturesPaperSettings;
+  futuresPositions: FuturesPaperPosition[];
+  futuresHistory: FuturesPaperHistoryRecord[];
 }
 
 type ValidationResult<T> =
@@ -319,6 +335,62 @@ function validateRiskJournal(value: unknown): ValidationResult<PaperRiskJournalE
   return { ok: true, value: entries.slice(0, MAX_PAPER_RISK_JOURNAL) };
 }
 
+function validateFuturesSettings(value: unknown): ValidationResult<FuturesPaperSettings> {
+  if (value === undefined) {
+    return { ok: true, value: { ...DEFAULT_FUTURES_PAPER_SETTINGS } };
+  }
+  const settings = normalizeFuturesPaperSettings(value);
+  return settings
+    ? { ok: true, value: settings }
+    : { ok: false, message: "Backup futures paper settings are invalid." };
+}
+
+function validateFuturesPositions(value: unknown): ValidationResult<FuturesPaperPosition[]> {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "Backup futures paper positions must be an array." };
+  }
+
+  const positions: FuturesPaperPosition[] = [];
+  const positionIds = new Set<string>();
+  const symbols = new Set<string>();
+  for (const item of value) {
+    const position = normalizeFuturesPaperPosition(item);
+    if (!position) {
+      return { ok: false, message: "Backup contains an invalid futures paper position." };
+    }
+    if (positionIds.has(position.id) || symbols.has(position.symbol)) {
+      return { ok: false, message: "Backup contains duplicate futures positions." };
+    }
+    positionIds.add(position.id);
+    symbols.add(position.symbol);
+    positions.push(position);
+  }
+  return { ok: true, value: positions };
+}
+
+function validateFuturesHistory(value: unknown): ValidationResult<FuturesPaperHistoryRecord[]> {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "Backup futures paper history must be an array." };
+  }
+
+  const records: FuturesPaperHistoryRecord[] = [];
+  const recordIds = new Set<string>();
+  for (const item of value) {
+    const record = normalizeFuturesHistoryRecord(item);
+    if (!record) {
+      return { ok: false, message: "Backup contains an invalid futures paper history record." };
+    }
+    if (recordIds.has(record.recordId)) {
+      return { ok: false, message: "Backup contains duplicate futures paper history ids." };
+    }
+    recordIds.add(record.recordId);
+    records.push(record);
+  }
+  return { ok: true, value: records.slice(0, MAX_FUTURES_PAPER_HISTORY) };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -360,6 +432,9 @@ export function createLocalDataBackup(
   riskSettings: PaperRiskSettings = DEFAULT_PAPER_RISK_SETTINGS,
   riskJournal: PaperRiskJournalEntry[] = [],
   signalSensitivity: PaperSignalSensitivity = DEFAULT_PAPER_SIGNAL_SENSITIVITY,
+  futuresSettings: FuturesPaperSettings = DEFAULT_FUTURES_PAPER_SETTINGS,
+  futuresPositions: FuturesPaperPosition[] = [],
+  futuresHistory: FuturesPaperHistoryRecord[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -392,6 +467,15 @@ export function createLocalDataBackup(
       .map(normalizePaperRiskJournalEntry)
       .filter((entry): entry is PaperRiskJournalEntry => entry !== null)
       .slice(0, MAX_PAPER_RISK_JOURNAL),
+    futuresPaperSettings:
+      normalizeFuturesPaperSettings(futuresSettings) ?? { ...DEFAULT_FUTURES_PAPER_SETTINGS },
+    futuresPaperPositions: futuresPositions
+      .map(normalizeFuturesPaperPosition)
+      .filter((position): position is FuturesPaperPosition => position !== null),
+    futuresPaperHistory: futuresHistory
+      .map(normalizeFuturesHistoryRecord)
+      .filter((record): record is FuturesPaperHistoryRecord => record !== null)
+      .slice(0, MAX_FUTURES_PAPER_HISTORY),
     settings: { ...state.settings },
   };
 }
@@ -459,6 +543,21 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${riskJournal.message}` };
   }
 
+  const futuresSettings = validateFuturesSettings(parsed.futuresPaperSettings);
+  if (futuresSettings.ok === false) {
+    return { ok: false, message: `Import failed. ${futuresSettings.message}` };
+  }
+
+  const futuresPositions = validateFuturesPositions(parsed.futuresPaperPositions);
+  if (futuresPositions.ok === false) {
+    return { ok: false, message: `Import failed. ${futuresPositions.message}` };
+  }
+
+  const futuresHistory = validateFuturesHistory(parsed.futuresPaperHistory);
+  if (futuresHistory.ok === false) {
+    return { ok: false, message: `Import failed. ${futuresHistory.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -478,6 +577,9 @@ export function parseLocalDataBackup(
       backtestRuns: backtestRuns.value,
       riskSettings: riskSettings.value,
       riskJournal: riskJournal.value,
+      futuresSettings: futuresSettings.value,
+      futuresPositions: futuresPositions.value,
+      futuresHistory: futuresHistory.value,
     },
   };
 }

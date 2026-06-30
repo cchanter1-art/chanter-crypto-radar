@@ -8,6 +8,7 @@ import MarketPriceStatus from "@/components/MarketPriceStatus";
 import PaperRiskEngine from "@/components/PaperRiskEngine";
 import PaperSignalEngine from "@/components/PaperSignalEngine";
 import TradeHistoryTable from "@/components/TradeHistoryTable";
+import FuturesPaperPanel from "@/components/FuturesPaperPanel";
 import type { PaperTrade } from "@/types";
 
 export default function PortfolioSection() {
@@ -94,6 +95,8 @@ export default function PortfolioSection() {
       <PaperRiskEngine className="mt-8" />
 
       <PaperSignalEngine className="mt-8" />
+
+      <FuturesPaperPanel className="mt-8" />
 
       <button
         onClick={() => setShowModal(true)}

@@ -35,6 +35,15 @@ import {
   validatePaperRiskSettings,
   type PaperRiskSettings,
 } from "@/lib/paperRiskController";
+import {
+  clearFuturesPaperData,
+  loadFuturesPaperHistory,
+  loadFuturesPaperPositions,
+  loadFuturesPaperSettings,
+  saveFuturesPaperHistory,
+  saveFuturesPaperPositions,
+  saveFuturesPaperSettings,
+} from "@/lib/futuresPaperEngine";
 
 type DataStatus = {
   type: "success" | "error";
@@ -92,6 +101,9 @@ export default function SettingsSection() {
       loadPaperRiskSettings(),
       loadPaperRiskJournal(),
       loadPaperSignalSensitivity(),
+      loadFuturesPaperSettings(),
+      loadFuturesPaperPositions(),
+      loadFuturesPaperHistory(),
     );
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -129,13 +141,19 @@ export default function SettingsSection() {
       const previousRiskSettings = loadPaperRiskSettings();
       const previousRiskJournal = loadPaperRiskJournal();
       const previousSignalSensitivity = loadPaperSignalSensitivity();
+      const previousFuturesSettings = loadFuturesPaperSettings();
+      const previousFuturesPositions = loadFuturesPaperPositions();
+      const previousFuturesHistory = loadFuturesPaperHistory();
 
       const didSaveLocalHistories =
         savePaperSignalHistory(result.value.paperSignals) &&
         saveBacktestHistory(result.value.backtestRuns) &&
         savePaperRiskSettings(result.value.riskSettings) &&
         savePaperRiskJournal(result.value.riskJournal) &&
-        savePaperSignalSensitivity(result.value.signalSensitivity);
+        savePaperSignalSensitivity(result.value.signalSensitivity) &&
+        saveFuturesPaperSettings(result.value.futuresSettings) &&
+        saveFuturesPaperPositions(result.value.futuresPositions) &&
+        saveFuturesPaperHistory(result.value.futuresHistory);
 
       if (!didSaveLocalHistories) {
         savePaperSignalHistory(previousPaperSignals);
@@ -143,9 +161,12 @@ export default function SettingsSection() {
         savePaperRiskSettings(previousRiskSettings);
         savePaperRiskJournal(previousRiskJournal);
         savePaperSignalSensitivity(previousSignalSensitivity);
+        saveFuturesPaperSettings(previousFuturesSettings);
+        saveFuturesPaperPositions(previousFuturesPositions);
+        saveFuturesPaperHistory(previousFuturesHistory);
         setDataStatus({
           type: "error",
-          message: "Import failed. Local signal, backtest, sensitivity, or risk data could not be saved in this browser.",
+          message: "Import failed. Local signal, backtest, futures, sensitivity, or risk data could not be saved in this browser.",
         });
         return;
       }
@@ -182,6 +203,7 @@ export default function SettingsSection() {
       clearBacktestHistory();
       clearPaperRiskSettings();
       clearPaperRiskJournal();
+      clearFuturesPaperData();
       setFormData({
         displayName: emptyState.settings.displayName,
         email: emptyState.settings.email,
@@ -617,7 +639,8 @@ export default function SettingsSection() {
             }}
           >
             Back up or restore your watchlist, paper trades, price alerts, paper signal history,
-            saved backtests, signal sensitivity, Risk Controller rules, Risk Journal, and app settings.
+            saved backtests, signal sensitivity, futures paper data, Risk Controller rules,
+            Risk Journal, and app settings.
           </p>
           <p
             className="mb-5 text-xs"
