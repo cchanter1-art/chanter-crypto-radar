@@ -66,6 +66,8 @@ import {
   loadSignalQualityHistory,
   saveSignalQualityHistory,
 } from "@/lib/signalQualityScore";
+import { loadMarketDataIntegrityHistory } from "@/lib/marketDataIntegrity";
+import { getAutoIntelligenceCycleState } from "@/lib/autoIntelligenceCycle";
 
 type DataStatus = {
   type: "success" | "error";
@@ -131,6 +133,8 @@ export default function SettingsSection() {
       loadFuturesStrategyBacktestHistory(),
       loadForwardTestData(),
       loadSignalQualityHistory(),
+      loadMarketDataIntegrityHistory(),
+      getAutoIntelligenceCycleState(),
     );
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
