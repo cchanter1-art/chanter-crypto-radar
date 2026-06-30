@@ -260,6 +260,14 @@ export function generateFuturesStrategySetup(
   scenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
 ): FuturesStrategySetup {
   const candles = getMock15mCandles(symbol, scenario);
+  return generateFuturesStrategySetupFromCandles(profile, symbol, candles);
+}
+
+export function generateFuturesStrategySetupFromCandles(
+  profile: Exclude<FuturesStrategyProfile, "Manual">,
+  symbol: FuturesSymbol,
+  candles: FuturesMockCandle[],
+): FuturesStrategySetup {
   if (profile === "Trend Follow") return generateTrendFollow(symbol, candles);
   if (profile === "Breakout") return generateBreakout(symbol, candles);
   return generateMeanReversion(symbol, candles);

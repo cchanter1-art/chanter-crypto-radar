@@ -38,6 +38,11 @@ import {
   isFuturesStrategyProfile,
   type FuturesStrategyProfile,
 } from "@/lib/futuresStrategyProfiles";
+import {
+  MAX_FUTURES_STRATEGY_BACKTEST_HISTORY,
+  normalizeFuturesStrategyBacktestRun,
+  type FuturesStrategyBacktestRun,
+} from "@/lib/futuresStrategyBacktest";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -77,6 +82,7 @@ export interface LocalDataBackup {
   futuresPaperHistory: FuturesPaperHistoryRecord[];
   futuresStrategyProfile: FuturesStrategyProfile;
   futuresTestScenario: FuturesTestScenario;
+  futuresStrategyBacktests: FuturesStrategyBacktestRun[];
   settings: AppSettings;
 }
 
@@ -92,6 +98,7 @@ export interface ImportedLocalDataBackup {
   futuresHistory: FuturesPaperHistoryRecord[];
   futuresStrategyProfile: FuturesStrategyProfile;
   futuresTestScenario: FuturesTestScenario;
+  futuresStrategyBacktests: FuturesStrategyBacktestRun[];
 }
 
 type ValidationResult<T> =
@@ -425,6 +432,31 @@ function validateFuturesTestScenario(
     : { ok: false, message: "Backup futures test scenario is invalid." };
 }
 
+function validateFuturesStrategyBacktests(
+  value: unknown,
+): ValidationResult<FuturesStrategyBacktestRun[]> {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "Backup futures strategy backtest history must be an array." };
+  }
+
+  const runs: FuturesStrategyBacktestRun[] = [];
+  const runIds = new Set<string>();
+  for (const item of value) {
+    const run = normalizeFuturesStrategyBacktestRun(item);
+    if (!run) {
+      return { ok: false, message: "Backup contains an invalid futures strategy backtest record." };
+    }
+    if (runIds.has(run.id)) {
+      return { ok: false, message: "Backup contains duplicate futures strategy backtest ids." };
+    }
+    runIds.add(run.id);
+    runs.push(run);
+  }
+
+  return { ok: true, value: runs.slice(0, MAX_FUTURES_STRATEGY_BACKTEST_HISTORY) };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -471,6 +503,7 @@ export function createLocalDataBackup(
   futuresHistory: FuturesPaperHistoryRecord[] = [],
   futuresStrategyProfile: FuturesStrategyProfile = DEFAULT_FUTURES_STRATEGY_PROFILE,
   futuresTestScenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
+  futuresStrategyBacktests: FuturesStrategyBacktestRun[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -518,6 +551,10 @@ export function createLocalDataBackup(
     futuresTestScenario: isFuturesTestScenario(futuresTestScenario)
       ? futuresTestScenario
       : DEFAULT_FUTURES_TEST_SCENARIO,
+    futuresStrategyBacktests: futuresStrategyBacktests
+      .map(normalizeFuturesStrategyBacktestRun)
+      .filter((run): run is FuturesStrategyBacktestRun => run !== null)
+      .slice(0, MAX_FUTURES_STRATEGY_BACKTEST_HISTORY),
     settings: { ...state.settings },
   };
 }
@@ -610,6 +647,13 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${futuresTestScenario.message}` };
   }
 
+  const futuresStrategyBacktests = validateFuturesStrategyBacktests(
+    parsed.futuresStrategyBacktests,
+  );
+  if (futuresStrategyBacktests.ok === false) {
+    return { ok: false, message: `Import failed. ${futuresStrategyBacktests.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -634,6 +678,7 @@ export function parseLocalDataBackup(
       futuresHistory: futuresHistory.value,
       futuresStrategyProfile: futuresStrategyProfile.value,
       futuresTestScenario: futuresTestScenario.value,
+      futuresStrategyBacktests: futuresStrategyBacktests.value,
     },
   };
 }

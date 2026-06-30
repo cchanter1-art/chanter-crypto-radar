@@ -5,6 +5,7 @@ import {
   BarChart3,
   Clock3,
   Database,
+  FlaskConical,
   History,
   Layers3,
   Radar,
@@ -27,6 +28,7 @@ import {
   type RsiZone,
 } from "@/lib/localMultiTimeframeAnalysis";
 import { loadBacktestHistory } from "@/lib/paperBacktestEngine";
+import { loadFuturesStrategyBacktestHistory } from "@/lib/futuresStrategyBacktest";
 import {
   loadPaperRiskJournal,
   loadPaperRiskSettings,
@@ -224,6 +226,7 @@ export default function CommandCenterDashboard() {
     riskSettings: loadPaperRiskSettings(),
     riskJournal: loadPaperRiskJournal(),
     backtests: loadBacktestHistory(),
+    futuresStrategyBacktests: loadFuturesStrategyBacktestHistory(),
     futuresHistory: loadFuturesPaperHistory(),
     futuresPositions: loadFuturesPaperPositions(),
     futuresSettings: loadFuturesPaperSettings(),
@@ -262,6 +265,13 @@ export default function CommandCenterDashboard() {
       latestSignals.filter((signal) => signal.label === label).length,
     ]),
   ) as Record<PaperSignalLabel, number>;
+  const latestFuturesStrategyBacktest = localSnapshot.futuresStrategyBacktests[0] ?? null;
+  const bestRecentFuturesStrategyBacktest = localSnapshot.futuresStrategyBacktests.reduce<
+    (typeof localSnapshot.futuresStrategyBacktests)[number] | null
+  >(
+    (best, run) => !best || run.metrics.returnPercent > best.metrics.returnPercent ? run : best,
+    null,
+  );
 
   const futuresLiquidationState = localSnapshot.futuresPositions.length === 0
     ? "No open futures positions"
@@ -303,8 +313,15 @@ export default function CommandCenterDashboard() {
       title: `${record.action} ${record.direction} ${record.symbol}`,
       detail: `${record.leverage}x isolated · ${formatCurrency(record.marginAmount)} margin`,
     }));
+    const futuresStrategyBacktests: JournalEvent[] = localSnapshot.futuresStrategyBacktests.map((run) => ({
+      id: `futures-strategy-backtest-${run.id}`,
+      timestamp: run.createdAt,
+      category: "Strategy validation",
+      title: `${run.config.profile} · ${run.config.symbol}`,
+      detail: `${run.interpretation} · ${formatCurrency(run.metrics.netPnl)} net P/L`,
+    }));
 
-    return [...paperTrades, ...signals, ...backtests, ...futures]
+    return [...paperTrades, ...signals, ...backtests, ...futures, ...futuresStrategyBacktests]
       .filter((event) => !Number.isNaN(Date.parse(event.timestamp)))
       .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
       .slice(0, 8);
@@ -450,6 +467,38 @@ export default function CommandCenterDashboard() {
           </p>
         </SectionCard>
 
+        <SectionCard
+          id="strategy-validation-summary-title"
+          title="Futures Strategy Validation"
+          subtitle="Recent deterministic 15m profile backtests"
+          icon={<FlaskConical size={17} />}
+          badge="Local/mock only"
+          className="mt-6"
+        >
+          {latestFuturesStrategyBacktest && bestRecentFuturesStrategyBacktest ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                <Metric
+                  label="Best recent test"
+                  value={`${bestRecentFuturesStrategyBacktest.config.profile} · ${bestRecentFuturesStrategyBacktest.config.symbol}`}
+                  detail={`${bestRecentFuturesStrategyBacktest.metrics.returnPercent.toFixed(2)}% simulated return`}
+                />
+                <Metric label="Latest win rate" value={`${latestFuturesStrategyBacktest.metrics.winRate.toFixed(2)}%`} />
+                <Metric label="Latest net P/L" value={formatCurrency(latestFuturesStrategyBacktest.metrics.netPnl)} />
+                <Metric label="Latest max drawdown" value={`${latestFuturesStrategyBacktest.metrics.maxDrawdown.toFixed(2)}%`} />
+                <Metric label="Latest risk blocked" value={`${latestFuturesStrategyBacktest.metrics.riskBlockedCount}`} />
+              </div>
+              <p className="mt-4 text-xs leading-5" style={{ color: "#6b7280" }}>
+                Latest: {latestFuturesStrategyBacktest.config.profile} · {latestFuturesStrategyBacktest.config.scenario} · {latestFuturesStrategyBacktest.interpretation}. Validation status is descriptive only.
+              </p>
+            </>
+          ) : (
+            <p className="rounded-lg p-4 text-sm" style={{ color: "#6b7280", background: "rgba(201, 215, 227, 0.025)" }}>
+              No saved futures strategy validation runs are available. Run the 15m Futures Strategy Backtest from Analytics.
+            </p>
+          )}
+        </SectionCard>
+
         <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
           <SectionCard
             id="signal-summary-title"
@@ -523,7 +572,7 @@ export default function CommandCenterDashboard() {
             <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Metric label="Paper trades" value={`${state.trades.length}`} />
               <Metric label="Signals saved" value={`${localSnapshot.signals.length}`} />
-              <Metric label="Backtests" value={`${localSnapshot.backtests.length}`} />
+              <Metric label="Backtests" value={`${localSnapshot.backtests.length + localSnapshot.futuresStrategyBacktests.length}`} />
               <Metric label="Futures actions" value={`${localSnapshot.futuresHistory.length}`} />
             </div>
             {journalEvents.length > 0 ? (

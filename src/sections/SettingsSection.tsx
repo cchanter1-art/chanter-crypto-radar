@@ -51,6 +51,11 @@ import {
   loadFuturesStrategyProfile,
   saveFuturesStrategyProfile,
 } from "@/lib/futuresStrategyProfiles";
+import {
+  clearFuturesStrategyBacktestHistory,
+  loadFuturesStrategyBacktestHistory,
+  saveFuturesStrategyBacktestHistory,
+} from "@/lib/futuresStrategyBacktest";
 
 type DataStatus = {
   type: "success" | "error";
@@ -113,6 +118,7 @@ export default function SettingsSection() {
       loadFuturesPaperHistory(),
       loadFuturesStrategyProfile(),
       loadFuturesTestScenario(),
+      loadFuturesStrategyBacktestHistory(),
     );
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -155,6 +161,7 @@ export default function SettingsSection() {
       const previousFuturesHistory = loadFuturesPaperHistory();
       const previousFuturesStrategyProfile = loadFuturesStrategyProfile();
       const previousFuturesTestScenario = loadFuturesTestScenario();
+      const previousFuturesStrategyBacktests = loadFuturesStrategyBacktestHistory();
 
       const didSaveLocalHistories =
         savePaperSignalHistory(result.value.paperSignals) &&
@@ -166,7 +173,8 @@ export default function SettingsSection() {
         saveFuturesPaperPositions(result.value.futuresPositions) &&
         saveFuturesPaperHistory(result.value.futuresHistory) &&
         saveFuturesStrategyProfile(result.value.futuresStrategyProfile) &&
-        saveFuturesTestScenario(result.value.futuresTestScenario);
+        saveFuturesTestScenario(result.value.futuresTestScenario) &&
+        saveFuturesStrategyBacktestHistory(result.value.futuresStrategyBacktests);
 
       if (!didSaveLocalHistories) {
         savePaperSignalHistory(previousPaperSignals);
@@ -179,6 +187,7 @@ export default function SettingsSection() {
         saveFuturesPaperHistory(previousFuturesHistory);
         saveFuturesStrategyProfile(previousFuturesStrategyProfile);
         saveFuturesTestScenario(previousFuturesTestScenario);
+        saveFuturesStrategyBacktestHistory(previousFuturesStrategyBacktests);
         setDataStatus({
           type: "error",
           message: "Import failed. Local signal, backtest, futures, sensitivity, or risk data could not be saved in this browser.",
@@ -220,6 +229,7 @@ export default function SettingsSection() {
       clearPaperRiskJournal();
       clearFuturesPaperData();
       clearFuturesStrategyProfile();
+      clearFuturesStrategyBacktestHistory();
       setFormData({
         displayName: emptyState.settings.displayName,
         email: emptyState.settings.email,
@@ -655,8 +665,9 @@ export default function SettingsSection() {
             }}
           >
             Back up or restore your watchlist, paper trades, price alerts, paper signal history,
-            saved backtests, signal sensitivity, futures paper data, strategy profile and test
-            scenario, Risk Controller rules, Risk Journal, and app settings.
+            saved backtests, signal sensitivity, futures paper data, strategy profile, test
+            scenario, futures strategy validations, Risk Controller rules, Risk Journal, and app
+            settings.
           </p>
           <p
             className="mb-5 text-xs"
