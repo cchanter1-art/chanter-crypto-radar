@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Routes, Route, useLocation } from "react-router-dom";
+import { Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider } from "@/context/AppProvider";
 import CommandCenterDashboard from "@/components/CommandCenterDashboard";
 import Navigation from "@/components/Navigation";
@@ -79,6 +79,7 @@ function AppContent() {
               </ViewContainer>
             }
           />
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
           <Route
             path="/watchlist"
             element={
