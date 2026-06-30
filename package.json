@@ -13,6 +13,7 @@
     "test:market-data-integrity": "node scripts/verify-market-data-integrity.mjs",
     "test:live-candle-provider": "node scripts/verify-live-candle-provider.mjs",
     "test:auto-intelligence-cycle": "node scripts/verify-auto-intelligence-cycle.mjs",
+    "test:candidate-review-queue": "node scripts/verify-candidate-review-queue.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
