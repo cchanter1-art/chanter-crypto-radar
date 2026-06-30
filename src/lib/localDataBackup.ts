@@ -52,6 +52,11 @@ import {
   normalizeSignalQualityRecord,
   type SignalQualityRecord,
 } from "@/lib/signalQualityScore";
+import {
+  MAX_MARKET_DATA_INTEGRITY_HISTORY,
+  normalizeMarketDataIntegrityReport,
+  type MarketDataIntegrityReport,
+} from "@/lib/marketDataIntegrity";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -94,6 +99,7 @@ export interface LocalDataBackup {
   futuresStrategyBacktests: FuturesStrategyBacktestRun[];
   forwardTestData: ForwardTestData;
   signalQualityHistory: SignalQualityRecord[];
+  marketDataIntegrityHistory: MarketDataIntegrityReport[];
   settings: AppSettings;
 }
 
@@ -112,6 +118,7 @@ export interface ImportedLocalDataBackup {
   futuresStrategyBacktests: FuturesStrategyBacktestRun[];
   forwardTestData: ForwardTestData;
   signalQualityHistory: SignalQualityRecord[];
+  marketDataIntegrityHistory: MarketDataIntegrityReport[];
 }
 
 type ValidationResult<T> =
@@ -501,6 +508,29 @@ function validateSignalQualityHistory(value: unknown): ValidationResult<SignalQu
   return { ok: true, value: records.slice(0, MAX_SIGNAL_QUALITY_HISTORY) };
 }
 
+function validateMarketDataIntegrityHistory(
+  value: unknown,
+): ValidationResult<MarketDataIntegrityReport[]> {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "Backup Market Data Integrity history must be an array." };
+  }
+  const records: MarketDataIntegrityReport[] = [];
+  const recordIds = new Set<string>();
+  for (const item of value) {
+    const record = normalizeMarketDataIntegrityReport(item);
+    if (!record) {
+      return { ok: false, message: "Backup contains an invalid Market Data Integrity record." };
+    }
+    if (recordIds.has(record.id)) {
+      return { ok: false, message: "Backup contains duplicate Market Data Integrity ids." };
+    }
+    recordIds.add(record.id);
+    records.push(record);
+  }
+  return { ok: true, value: records.slice(0, MAX_MARKET_DATA_INTEGRITY_HISTORY) };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -550,6 +580,7 @@ export function createLocalDataBackup(
   futuresStrategyBacktests: FuturesStrategyBacktestRun[] = [],
   forwardTestData: ForwardTestData = { activeSession: null, completedSessions: [] },
   signalQualityHistory: SignalQualityRecord[] = [],
+  marketDataIntegrityHistory: MarketDataIntegrityReport[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -609,6 +640,10 @@ export function createLocalDataBackup(
       .map(normalizeSignalQualityRecord)
       .filter((record): record is SignalQualityRecord => record !== null)
       .slice(0, MAX_SIGNAL_QUALITY_HISTORY),
+    marketDataIntegrityHistory: marketDataIntegrityHistory
+      .map(normalizeMarketDataIntegrityReport)
+      .filter((report): report is MarketDataIntegrityReport => report !== null)
+      .slice(0, MAX_MARKET_DATA_INTEGRITY_HISTORY),
     settings: { ...state.settings },
   };
 }
@@ -718,6 +753,13 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${signalQualityHistory.message}` };
   }
 
+  const marketDataIntegrityHistory = validateMarketDataIntegrityHistory(
+    parsed.marketDataIntegrityHistory,
+  );
+  if (marketDataIntegrityHistory.ok === false) {
+    return { ok: false, message: `Import failed. ${marketDataIntegrityHistory.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -745,6 +787,7 @@ export function parseLocalDataBackup(
       futuresStrategyBacktests: futuresStrategyBacktests.value,
       forwardTestData: forwardTestData.value,
       signalQualityHistory: signalQualityHistory.value,
+      marketDataIntegrityHistory: marketDataIntegrityHistory.value,
     },
   };
 }

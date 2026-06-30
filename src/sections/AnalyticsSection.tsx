@@ -12,6 +12,7 @@ const FuturesPaperPanel = lazy(() => import("@/components/FuturesPaperPanel"));
 const FuturesStrategyBacktestPanel = lazy(() => import("@/components/FuturesStrategyBacktestPanel"));
 const ForwardTestSessionPanel = lazy(() => import("@/components/ForwardTestSessionPanel"));
 const SignalQualityScorePanel = lazy(() => import("@/components/SignalQualityScorePanel"));
+const MarketDataIntegrityPanel = lazy(() => import("@/components/MarketDataIntegrityPanel"));
 
 export default function AnalyticsSection() {
   return (
@@ -52,7 +53,12 @@ export default function AnalyticsSection() {
         <FuturesPaperPanel className="mt-8" />
       </Suspense>
 
-      <MarketNotes className="mt-8" />
+
+      <Suspense fallback={<LazyRouteFallback />}>
+        <MarketDataIntegrityPanel />
+      </Suspense>
+
+<MarketNotes className="mt-8" />
     </div>
   );
 }

@@ -53,6 +53,9 @@ export interface ForwardTestObservation {
   invalidationNote: string;
   userNote: string;
   noOrderDisclaimer: typeof FORWARD_TEST_NO_ORDER_DISCLAIMER;
+  dataIntegrityScore?: number;
+  dataSourceLabel?: string;
+  dataFreshnessStatus?: string;
 }
 
 export interface ForwardTestSession {
@@ -92,6 +95,9 @@ export interface ForwardTestObservationContext {
   futuresHistory: FuturesPaperHistoryRecord[];
   futuresSettings: FuturesPaperSettings;
   riskSettings: PaperRiskSettings;
+  dataIntegrityScore?: number;
+  dataSourceLabel?: string;
+  dataFreshnessStatus?: string;
 }
 
 type ForwardTestDataResult =
@@ -228,7 +234,7 @@ function normalizeObservation(
   const riskStatus = value.riskStatus as ForwardTestRiskStatus;
   if (direction === "WAIT" && riskStatus !== "WAIT") return null;
 
-  return {
+  const result: ForwardTestObservation = {
     id: value.id,
     timestamp: value.timestamp,
     sessionId,
@@ -248,6 +254,18 @@ function normalizeObservation(
     userNote: value.userNote,
     noOrderDisclaimer: FORWARD_TEST_NO_ORDER_DISCLAIMER,
   };
+
+  if (isFiniteNumber(value.dataIntegrityScore) && value.dataIntegrityScore >= 0 && value.dataIntegrityScore <= 100) {
+    result.dataIntegrityScore = value.dataIntegrityScore;
+  }
+  if (typeof value.dataSourceLabel === "string" && value.dataSourceLabel.trim() !== "") {
+    result.dataSourceLabel = value.dataSourceLabel;
+  }
+  if (typeof value.dataFreshnessStatus === "string" && value.dataFreshnessStatus.trim() !== "") {
+    result.dataFreshnessStatus = value.dataFreshnessStatus;
+  }
+
+  return result;
 }
 
 function normalizeSession(value: unknown): ForwardTestSession | null {
@@ -495,6 +513,17 @@ function createObservation(
     userNote: context.userNote.trim(),
     noOrderDisclaimer: FORWARD_TEST_NO_ORDER_DISCLAIMER,
   };
+
+  if (isFiniteNumber(context.dataIntegrityScore) && context.dataIntegrityScore >= 0 && context.dataIntegrityScore <= 100) {
+    observation.dataIntegrityScore = context.dataIntegrityScore;
+  }
+  if (typeof context.dataSourceLabel === "string" && context.dataSourceLabel.trim() !== "") {
+    observation.dataSourceLabel = context.dataSourceLabel;
+  }
+  if (typeof context.dataFreshnessStatus === "string" && context.dataFreshnessStatus.trim() !== "") {
+    observation.dataFreshnessStatus = context.dataFreshnessStatus;
+  }
+
   return {
     ok: true,
     observation,
