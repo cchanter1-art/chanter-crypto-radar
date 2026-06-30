@@ -18,6 +18,7 @@ import { loadPaperRiskSettings } from "@/lib/paperRiskController";
 import { generateFuturesStrategySetup } from "@/lib/futuresStrategyProfiles";
 import { loadFuturesStrategyBacktestHistory } from "@/lib/futuresStrategyBacktest";
 import { loadForwardTestData, type ForwardTestRiskStatus } from "@/lib/forwardTestSession";
+import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 import {
   MAX_SIGNAL_QUALITY_HISTORY,
   SIGNAL_QUALITY_PROFILES,
@@ -66,6 +67,7 @@ export default function SignalQualityScorePanel() {
     () => history[0] ?? null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [integrityReport] = useState(() => loadLatestMarketDataIntegrity());
 
   const handleGenerate = () => {
     setError(null);
@@ -183,14 +185,14 @@ export default function SignalQualityScorePanel() {
             </h3>
           </div>
           <p className="text-xs" style={{ color: "#6b7280" }}>
-            Command Center signal evaluation — informational only
+            Command Center signal evaluation -- informational only
           </p>
         </div>
         <span
           className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.08em]"
           style={{ color: "#cc9258", border: "1px solid rgba(204,146,88,0.24)" }}
         >
-          Informational only · paper only
+          Informational only -- paper only
         </span>
       </div>
 
@@ -205,6 +207,53 @@ export default function SignalQualityScorePanel() {
         <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>No real orders are placed.</p>
         <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>For tracking only. Not financial advice.</p>
       </div>
+
+      {integrityReport ? (
+        <div
+          className="mt-4 rounded-lg p-4"
+          style={{ background: "rgba(201,215,227,0.02)", border: "1px solid rgba(201,215,227,0.06)" }}
+        >
+          <p className="label-upper" style={{ color: "#4b5563", fontSize: 9 }}>Market Data Integrity Context</p>
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Integrity Score</p>
+              <p className="mt-1 text-sm font-medium" style={{ color: integrityReport.integrityScore >= 70 ? "#22c55e" : integrityReport.integrityScore >= 50 ? "#f59e0b" : "#ef4444" }}>{integrityReport.integrityScore}/100</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Source</p>
+              <p className="mt-1 text-xs" style={{ color: "#9ca3af" }}>{integrityReport.source.replace(/_/g, " ")}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Freshness</p>
+              <p className="mt-1 text-xs" style={{ color: "#9ca3af" }}>{integrityReport.freshnessStatus}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#6b7280" }}>Readiness</p>
+              <p className="mt-1 text-xs" style={{ color: "#9ca3af" }}>{integrityReport.readinessStatus.replace(/_/g, " ")}</p>
+            </div>
+          </div>
+          {(integrityReport.gapCount > 0 || integrityReport.anomalyCount > 0) && (
+            <p className="mt-2 text-xs" style={{ color: "#f59e0b" }}>
+              {integrityReport.gapCount > 0 && `${integrityReport.gapCount} gap(s) detected. `}
+              {integrityReport.anomalyCount > 0 && `${integrityReport.anomalyCount} anomaly/anomalies detected.`}
+            </p>
+          )}
+          {integrityReport.source !== "LIVE_READ_ONLY" && (
+            <p className="mt-1 text-xs" style={{ color: "#a78b63" }}>
+              Data source is {integrityReport.source.replace(/_/g, " ")}. Not market-grade. Signal quality is evaluated without live data context.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div
+          className="mt-4 rounded-lg p-3"
+          style={{ background: "rgba(245, 158, 11, 0.04)", border: "1px solid rgba(245, 158, 11, 0.12)" }}
+        >
+          <p className="text-xs" style={{ color: "#a78b63" }}>
+            No Market Data Integrity report available. Signal quality is evaluated without data-quality context. Run an integrity check from the Market Data Integrity panel.
+          </p>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div>
@@ -267,7 +316,7 @@ export default function SignalQualityScorePanel() {
               <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>/ 100</p>
               <p className="mt-4 text-sm font-medium" style={{ color: recordColor }}>{activeRecord.label}</p>
               <p className="mt-2 text-[10px] uppercase tracking-[0.08em]" style={{ color: "#4b5563" }}>
-                {activeRecord.input.symbol} · {activeRecord.input.direction} · {activeRecord.input.riskStatus}
+                {activeRecord.input.symbol} -- {activeRecord.input.direction} -- {activeRecord.input.riskStatus}
               </p>
             </div>
 
@@ -276,7 +325,7 @@ export default function SignalQualityScorePanel() {
                 <p className="label-upper" style={{ color: "#22c55e", fontSize: 9 }}>Top positive factors</p>
                 <div className="mt-3 space-y-2">
                   {activeRecord.topPositiveFactors.length > 0
-                    ? activeRecord.topPositiveFactors.map((item) => <p key={item.id} className="text-xs" style={{ color: "#9ca3af" }}>+{item.pointsImpact} · {item.factor}</p>)
+                    ? activeRecord.topPositiveFactors.map((item) => <p key={item.id} className="text-xs" style={{ color: "#9ca3af" }}>+{item.pointsImpact} -- {item.factor}</p>)
                     : <p className="text-xs" style={{ color: "#6b7280" }}>No positive factor contribution.</p>}
                 </div>
               </div>
@@ -284,7 +333,7 @@ export default function SignalQualityScorePanel() {
                 <p className="label-upper" style={{ color: "#ef4444", fontSize: 9 }}>Top negative factors</p>
                 <div className="mt-3 space-y-2">
                   {activeRecord.topNegativeFactors.length > 0
-                    ? activeRecord.topNegativeFactors.map((item) => <p key={item.id} className="text-xs" style={{ color: "#9ca3af" }}>{item.pointsImpact} · {item.factor}</p>)
+                    ? activeRecord.topNegativeFactors.map((item) => <p key={item.id} className="text-xs" style={{ color: "#9ca3af" }}>{item.pointsImpact} -- {item.factor}</p>)
                     : <p className="text-xs" style={{ color: "#6b7280" }}>No negative factor contribution.</p>}
                 </div>
               </div>
@@ -342,7 +391,7 @@ export default function SignalQualityScorePanel() {
         <details className="mt-6" style={{ borderTop: "1px solid rgba(201,215,227,0.05)", paddingTop: 16 }}>
           <summary className="flex cursor-pointer items-center gap-2 text-xs" style={{ color: "#6b7280" }}>
             <History size={13} />
-            Saved quality scores · {history.length} / {MAX_SIGNAL_QUALITY_HISTORY}
+            Saved quality scores -- {history.length} / {MAX_SIGNAL_QUALITY_HISTORY}
           </summary>
           <div className="mt-3 grid gap-2">
             {history.map((record) => (
@@ -353,8 +402,8 @@ export default function SignalQualityScorePanel() {
                 className="grid gap-2 rounded-md px-3 py-3 text-left transition-colors hover:bg-white/[0.03] sm:grid-cols-[1fr_auto_auto] sm:items-center"
                 style={{ border: "1px solid rgba(201,215,227,0.04)" }}
               >
-                <span className="text-xs" style={{ color: "#9ca3af" }}>{record.input.profile} · {record.input.scenario} · {record.input.symbol}</span>
-                <span className="data-mono text-xs" style={{ color: scoreColor(record.score) }}>{record.score} · {record.label}</span>
+                <span className="text-xs" style={{ color: "#9ca3af" }}>{record.input.profile} -- {record.input.scenario} -- {record.input.symbol}</span>
+                <span className="data-mono text-xs" style={{ color: scoreColor(record.score) }}>{record.score} -- {record.label}</span>
                 <span className="text-[10px]" style={{ color: "#4b5563" }}>{formatTimestamp(record.createdAt)}</span>
               </button>
             ))}

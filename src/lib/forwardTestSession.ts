@@ -20,6 +20,7 @@ import {
   type FuturesStrategyConfidence,
   type FuturesStrategyProfile,
 } from "@/lib/futuresStrategyProfiles";
+import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 
 export type ForwardTestProfile = Exclude<FuturesStrategyProfile, "Manual">;
 export type ForwardTestDirection = "LONG" | "SHORT" | "WAIT";
@@ -522,6 +523,22 @@ function createObservation(
   }
   if (typeof context.dataFreshnessStatus === "string" && context.dataFreshnessStatus.trim() !== "") {
     observation.dataFreshnessStatus = context.dataFreshnessStatus;
+  }
+
+  // Auto-populate from latest integrity report if not provided via context
+  if (observation.dataIntegrityScore === undefined || observation.dataSourceLabel === undefined || observation.dataFreshnessStatus === undefined) {
+    const latestIntegrity = loadLatestMarketDataIntegrity();
+    if (latestIntegrity) {
+      if (observation.dataIntegrityScore === undefined) {
+        observation.dataIntegrityScore = latestIntegrity.integrityScore;
+      }
+      if (observation.dataSourceLabel === undefined) {
+        observation.dataSourceLabel = latestIntegrity.source;
+      }
+      if (observation.dataFreshnessStatus === undefined) {
+        observation.dataFreshnessStatus = latestIntegrity.freshnessStatus;
+      }
+    }
   }
 
   return {

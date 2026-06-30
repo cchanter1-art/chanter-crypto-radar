@@ -686,10 +686,12 @@ export function normalizeMarketDataIntegrityReport(value: unknown): MarketDataIn
     },
   };
 
-  if (report.gapCount !== report.gaps.length && report.gaps.length > 20) {
+  const expectedGapLength = Math.min(report.gapCount, 20);
+  const expectedAnomalyLength = Math.min(report.anomalyCount, 20);
+  if (report.gaps.length !== expectedGapLength) {
     return null;
   }
-  if (report.anomalyCount !== report.anomalies.length && report.anomalies.length > 20) {
+  if (report.anomalies.length !== expectedAnomalyLength) {
     return null;
   }
 

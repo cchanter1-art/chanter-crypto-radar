@@ -337,28 +337,28 @@ export default function CommandCenterDashboard() {
       timestamp: signal.timestamp,
       category: "Paper signal",
       title: `${signal.label} ${signal.symbol}`,
-      detail: `${signal.confidence} confidence ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${signal.reason}`,
+      detail: `${signal.confidence} confidence  --  ${signal.reason}`,
     }));
     const backtests: JournalEvent[] = localSnapshot.backtests.map((run) => ({
       id: `backtest-${run.id}`,
       timestamp: run.createdAt,
       category: "Backtest",
       title: `${run.config.coinId === "all" ? "All supported coins" : run.config.coinId.toUpperCase()} simulation`,
-      detail: `${run.metrics.totalTrades} trades ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${run.metrics.netReturnPercent.toFixed(2)}% net return`,
+      detail: `${run.metrics.totalTrades} trades  --  ${run.metrics.netReturnPercent.toFixed(2)}% net return`,
     }));
     const futures: JournalEvent[] = localSnapshot.futuresHistory.map((record) => ({
       id: `futures-${record.recordId}`,
       timestamp: record.timestamp,
       category: "Futures paper",
       title: `${record.action} ${record.direction} ${record.symbol}`,
-      detail: `${record.leverage}x isolated ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${formatCurrency(record.marginAmount)} margin`,
+      detail: `${record.leverage}x isolated  --  ${formatCurrency(record.marginAmount)} margin`,
     }));
     const futuresStrategyBacktests: JournalEvent[] = localSnapshot.futuresStrategyBacktests.map((run) => ({
       id: `futures-strategy-backtest-${run.id}`,
       timestamp: run.createdAt,
       category: "Strategy validation",
-      title: `${run.config.profile} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${run.config.symbol}`,
-      detail: `${run.interpretation} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${formatCurrency(run.metrics.netPnl)} net P/L`,
+      title: `${run.config.profile}  --  ${run.config.symbol}`,
+      detail: `${run.interpretation}  --  ${formatCurrency(run.metrics.netPnl)} net P/L`,
     }));
 
     return [...paperTrades, ...signals, ...backtests, ...futures, ...futuresStrategyBacktests]
@@ -408,7 +408,7 @@ export default function CommandCenterDashboard() {
             badge={priceStateLabel}
           >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Metric label="Supported coins" value={`${coins.length}`} detail={coins.map((coin) => coin.symbol).join(" ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ")} />
+              <Metric label="Supported coins" value={`${coins.length}`} detail={coins.map((coin) => coin.symbol).join("  --  ")} />
               <Metric label="Watchlist tracked" value={`${watchlistCoins.length} / ${coins.length}`} detail="Browser-local selection" />
               <Metric label="Last price refresh" value={formatTimestamp(lastPriceUpdate)} detail={isPriceStale ? "Stale data warning" : "Latest recorded update"} />
             </div>
@@ -458,7 +458,7 @@ export default function CommandCenterDashboard() {
         <SectionCard
           id="multi-timeframe-title"
           title="Multi-Timeframe Analysis"
-          subtitle={`Deterministic local/mock structure ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${localSnapshot.scenario}`}
+          subtitle={`Deterministic local/mock structure  --  ${localSnapshot.scenario}`}
           icon={<Layers3 size={17} />}
           badge="Local/mock"
           className="mt-6"
@@ -474,7 +474,7 @@ export default function CommandCenterDashboard() {
                   <div>
                     <h3 className="text-sm font-medium" style={{ color: "#d1d5db" }}>{analysis.symbol}</h3>
                     <p className="mt-0.5 text-[10px] uppercase tracking-[0.06em]" style={{ color: "#5f6977" }}>
-                      {analysis.futuresSymbol} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {analysis.source}
+                      {analysis.futuresSymbol}  --  {analysis.source}
                     </p>
                   </div>
                 </div>
@@ -520,7 +520,7 @@ export default function CommandCenterDashboard() {
               <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 <Metric
                   label="Best recent test"
-                  value={`${bestRecentFuturesStrategyBacktest.config.profile} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${bestRecentFuturesStrategyBacktest.config.symbol}`}
+                  value={`${bestRecentFuturesStrategyBacktest.config.profile}  --  ${bestRecentFuturesStrategyBacktest.config.symbol}`}
                   detail={`${bestRecentFuturesStrategyBacktest.metrics.returnPercent.toFixed(2)}% simulated return`}
                 />
                 <Metric label="Latest win rate" value={`${latestFuturesStrategyBacktest.metrics.winRate.toFixed(2)}%`} />
@@ -529,7 +529,7 @@ export default function CommandCenterDashboard() {
                 <Metric label="Latest risk blocked" value={`${latestFuturesStrategyBacktest.metrics.riskBlockedCount}`} />
               </div>
               <p className="mt-4 text-xs leading-5" style={{ color: "#6b7280" }}>
-                Latest: {latestFuturesStrategyBacktest.config.profile} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {latestFuturesStrategyBacktest.config.scenario} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {latestFuturesStrategyBacktest.interpretation}. Validation status is descriptive only.
+                Latest: {latestFuturesStrategyBacktest.config.profile}  --  {latestFuturesStrategyBacktest.config.scenario}  --  {latestFuturesStrategyBacktest.interpretation}. Validation status is descriptive only.
               </p>
             </>
           ) : (
@@ -545,8 +545,8 @@ export default function CommandCenterDashboard() {
           subtitle="Manual strategy and risk observations"
           icon={<Eye size={17} />}
           badge={localSnapshot.forwardTestData.activeSession
-            ? "Active ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· observation only"
-            : "Inactive ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· paper only"}
+            ? "Active  --  observation only"
+            : "Inactive  --  paper only"}
           className="mt-6"
         >
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -558,7 +558,7 @@ export default function CommandCenterDashboard() {
             <Metric
               label="Latest observation"
               value={latestForwardTestObservation
-                ? `${latestForwardTestObservation.direction} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${latestForwardTestObservation.riskStatus}`
+                ? `${latestForwardTestObservation.direction}  --  ${latestForwardTestObservation.riskStatus}`
                 : "None"}
               detail={latestForwardTestObservation
                 ? formatTimestamp(latestForwardTestObservation.timestamp)
@@ -578,7 +578,7 @@ export default function CommandCenterDashboard() {
           title="Signal Quality Intelligence"
           subtitle="Latest transparent paper-signal evaluation"
           icon={<Gauge size={17} />}
-          badge="Informational only ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· paper only"
+          badge="Informational only  --  paper only"
           className="mt-6"
         >
           {localSnapshot.latestSignalQuality ? (
@@ -588,7 +588,7 @@ export default function CommandCenterDashboard() {
                 <Metric label="Quality label" value={localSnapshot.latestSignalQuality.label} />
                 <Metric
                   label="Setup"
-                  value={`${localSnapshot.latestSignalQuality.input.symbol} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${localSnapshot.latestSignalQuality.input.profile}`}
+                  value={`${localSnapshot.latestSignalQuality.input.symbol}  --  ${localSnapshot.latestSignalQuality.input.profile}`}
                   detail={localSnapshot.latestSignalQuality.input.scenario}
                 />
                 <Metric label="Risk status" value={localSnapshot.latestSignalQuality.input.riskStatus} />
