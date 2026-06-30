@@ -1,14 +1,17 @@
+import { Suspense, lazy } from "react";
 import PerformanceChart from "@/components/PerformanceChart";
 import DonutChart from "@/components/DonutChart";
 import MetricsList from "@/components/MetricsList";
 import MarketNotes from "@/components/MarketNotes";
 import PaperRiskEngine from "@/components/PaperRiskEngine";
 import PaperSignalEngine from "@/components/PaperSignalEngine";
-import BacktestEngine from "@/components/BacktestEngine";
-import FuturesPaperPanel from "@/components/FuturesPaperPanel";
-import FuturesStrategyBacktestPanel from "@/components/FuturesStrategyBacktestPanel";
-import ForwardTestSessionPanel from "@/components/ForwardTestSessionPanel";
-import SignalQualityScorePanel from "@/components/SignalQualityScorePanel";
+import { LazyRouteFallback } from "@/components/LazyRouteFallback";
+
+const BacktestEngine = lazy(() => import("@/components/BacktestEngine"));
+const FuturesPaperPanel = lazy(() => import("@/components/FuturesPaperPanel"));
+const FuturesStrategyBacktestPanel = lazy(() => import("@/components/FuturesStrategyBacktestPanel"));
+const ForwardTestSessionPanel = lazy(() => import("@/components/ForwardTestSessionPanel"));
+const SignalQualityScorePanel = lazy(() => import("@/components/SignalQualityScorePanel"));
 
 export default function AnalyticsSection() {
   return (
@@ -29,15 +32,25 @@ export default function AnalyticsSection() {
 
       <PaperSignalEngine className="mt-8" />
 
-      <BacktestEngine />
+      <Suspense fallback={<LazyRouteFallback />}>
+        <BacktestEngine />
+      </Suspense>
 
-      <FuturesStrategyBacktestPanel />
+      <Suspense fallback={<LazyRouteFallback />}>
+        <FuturesStrategyBacktestPanel />
+      </Suspense>
 
-      <ForwardTestSessionPanel />
+      <Suspense fallback={<LazyRouteFallback />}>
+        <ForwardTestSessionPanel />
+      </Suspense>
 
-      <SignalQualityScorePanel />
+      <Suspense fallback={<LazyRouteFallback />}>
+        <SignalQualityScorePanel />
+      </Suspense>
 
-      <FuturesPaperPanel className="mt-8" />
+      <Suspense fallback={<LazyRouteFallback />}>
+        <FuturesPaperPanel className="mt-8" />
+      </Suspense>
 
       <MarketNotes className="mt-8" />
     </div>

@@ -1,15 +1,17 @@
-import { useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import { Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { AppProvider } from "@/context/AppProvider";
-import CommandCenterDashboard from "@/components/CommandCenterDashboard";
 import Navigation from "@/components/Navigation";
 import ViewContainer from "@/components/ViewContainer";
-import WatchlistSection from "@/sections/WatchlistSection";
-import PortfolioSection from "@/sections/PortfolioSection";
-import AnalyticsSection from "@/sections/AnalyticsSection";
-import SettingsSection from "@/sections/SettingsSection";
-import HelpSection from "@/sections/HelpSection";
+import { LazyRouteFallback } from "@/components/LazyRouteFallback";
 import type { TranceTunnel } from "@/lib/TranceTunnel";
+
+const CommandCenterDashboard = lazy(() => import("@/components/CommandCenterDashboard"));
+const WatchlistSection = lazy(() => import("@/sections/WatchlistSection"));
+const PortfolioSection = lazy(() => import("@/sections/PortfolioSection"));
+const AnalyticsSection = lazy(() => import("@/sections/AnalyticsSection"));
+const SettingsSection = lazy(() => import("@/sections/SettingsSection"));
+const HelpSection = lazy(() => import("@/sections/HelpSection"));
 
 function AppContent() {
   const tunnelRef = useRef<TranceTunnel | null>(null);
@@ -75,7 +77,9 @@ function AppContent() {
             path="/"
             element={
               <ViewContainer>
-                <CommandCenterDashboard />
+                <Suspense fallback={<LazyRouteFallback />}>
+                  <CommandCenterDashboard />
+                </Suspense>
               </ViewContainer>
             }
           />
@@ -84,7 +88,9 @@ function AppContent() {
             path="/watchlist"
             element={
               <ViewContainer>
-                <WatchlistSection />
+                <Suspense fallback={<LazyRouteFallback />}>
+                  <WatchlistSection />
+                </Suspense>
               </ViewContainer>
             }
           />
@@ -92,7 +98,9 @@ function AppContent() {
             path="/portfolio"
             element={
               <ViewContainer>
-                <PortfolioSection />
+                <Suspense fallback={<LazyRouteFallback />}>
+                  <PortfolioSection />
+                </Suspense>
               </ViewContainer>
             }
           />
@@ -100,7 +108,9 @@ function AppContent() {
             path="/analytics"
             element={
               <ViewContainer>
-                <AnalyticsSection />
+                <Suspense fallback={<LazyRouteFallback />}>
+                  <AnalyticsSection />
+                </Suspense>
               </ViewContainer>
             }
           />
@@ -108,7 +118,9 @@ function AppContent() {
             path="/settings"
             element={
               <ViewContainer>
-                <SettingsSection />
+                <Suspense fallback={<LazyRouteFallback />}>
+                  <SettingsSection />
+                </Suspense>
               </ViewContainer>
             }
           />
@@ -116,7 +128,9 @@ function AppContent() {
             path="/help"
             element={
               <ViewContainer>
-                <HelpSection />
+                <Suspense fallback={<LazyRouteFallback />}>
+                  <HelpSection />
+                </Suspense>
               </ViewContainer>
             }
           />
