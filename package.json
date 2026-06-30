@@ -11,6 +11,7 @@
     "test:forward-session": "node scripts/verify-forward-test-session.mjs",
     "test:signal-quality": "node scripts/verify-signal-quality-score.mjs",
     "test:market-data-integrity": "node scripts/verify-market-data-integrity.mjs",
+    "test:live-candle-provider": "node scripts/verify-live-candle-provider.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -8,6 +8,10 @@ import {
   clearMarketDataIntegrityHistory,
   type MarketDataIntegrityReport,
 } from "@/lib/marketDataIntegrity";
+import {
+  fetchLive15mCandles,
+  runIntegrityCheckForLive,
+} from "@/lib/liveCandleProvider";
 import { loadFuturesTestScenario } from "@/lib/futuresPaperEngine";
 import type { FuturesSymbol } from "@/lib/futuresPaperEngine";
 
@@ -75,9 +79,39 @@ export default function MarketDataIntegrityPanel() {
     () => loadLatestMarketDataIntegrity(),
   );
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<"mock" | "live">("mock");
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const handleRunCheck = () => {
+  const handleRunCheck = async () => {
     setError(null);
+    setFetchError(null);
+
+    if (dataSource === "live") {
+      setLoading(true);
+      try {
+        const result = await fetchLive15mCandles({ symbol, limit: 100 });
+        if (!result.ok) {
+          setFetchError(
+            `Live fetch failed: ${result.error}. ` +
+            `Data source remains ${report ? report.source.replace(/_/g, " ") : "unavailable"}. ` +
+            `Try Local Mock or retry later.`,
+          );
+          return;
+        }
+        const newReport = runIntegrityCheckForLive(symbol, result.candles, result.fetchedAt);
+        const history = loadMarketDataIntegrityHistory();
+        const updated = [newReport, ...history.filter((r) => r.id !== newReport.id)];
+        saveMarketDataIntegrityHistory(updated);
+        setReport(newReport);
+      } catch {
+        setFetchError("Live fetch encountered an unexpected error. Try Local Mock or retry later.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       const scenario = loadFuturesTestScenario();
       const newReport = runIntegrityCheckForMock(symbol, scenario);
@@ -178,21 +212,24 @@ export default function MarketDataIntegrityPanel() {
             Source
           </label>
           <select
-            disabled
-            className="rounded-lg px-3 py-2 text-sm opacity-60"
+            value={dataSource}
+            onChange={(e) => setDataSource(e.target.value as "mock" | "live")}
+            className="rounded-lg px-3 py-2 text-sm cursor-pointer"
             style={{
               background: "rgba(201, 215, 227, 0.05)",
               border: "1px solid rgba(201, 215, 227, 0.1)",
               color: "#c9d7e3",
             }}
           >
-            <option style={{ background: "#0d1117" }}>Local Mock</option>
+            <option value="mock" style={{ background: "#0d1117" }}>Local Mock</option>
+            <option value="live" style={{ background: "#0d1117" }}>Live Read-Only</option>
           </select>
         </div>
 
         <button
           onClick={handleRunCheck}
-          className="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+          disabled={loading}
+          className="rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
           style={{
             background: "rgba(204, 146, 88, 0.12)",
             border: "1px solid rgba(204, 146, 88, 0.3)",
@@ -200,7 +237,7 @@ export default function MarketDataIntegrityPanel() {
           }}
         >
           <Activity size={14} className="inline mr-1.5" />
-          Run Integrity Check
+          {loading ? "Fetching..." : "Run Integrity Check"}
         </button>
 
         <button
@@ -219,6 +256,29 @@ export default function MarketDataIntegrityPanel() {
       {error && (
         <div className="mb-4 rounded-lg p-3" style={{ background: "rgba(239, 68, 68, 0.06)", border: "1px solid rgba(239, 68, 68, 0.16)" }}>
           <p className="text-xs" style={{ color: "#ef4444" }}>{error}</p>
+        </div>
+      )}
+
+      {fetchError && (
+        <div className="mb-4 rounded-lg p-3" style={{ background: "rgba(245, 158, 11, 0.06)", border: "1px solid rgba(245, 158, 11, 0.16)" }}>
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={14} style={{ color: "#f59e0b" }} className="mt-0.5 shrink-0" />
+            <p className="text-xs leading-5" style={{ color: "#a78b63" }}>{fetchError}</p>
+          </div>
+        </div>
+      )}
+
+      {dataSource === "live" && !loading && !fetchError && (
+        <div className="mb-4 rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.02)", border: "1px solid rgba(201, 215, 227, 0.05)" }}>
+          <p className="text-xs" style={{ color: "#6b7280" }}>
+            Live Read-Only fetches public 15m candles from Binance public API. No authentication. No orders. If the fetch fails, no live data is stored.
+          </p>
+        </div>
+      )}
+
+      {loading && (
+        <div className="mb-4 rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.02)", border: "1px solid rgba(201, 215, 227, 0.05)" }}>
+          <p className="text-xs" style={{ color: "#9ca3af" }}>Fetching live 15m candles for {symbol}...</p>
         </div>
       )}
 
