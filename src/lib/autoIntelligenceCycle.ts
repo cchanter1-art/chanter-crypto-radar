@@ -34,6 +34,20 @@ export interface AutoIntelligenceCycleRunRecord {
   error: string | null;
 }
 
+export interface AutoObservationRecord {
+  id: string;
+  timestamp: string;
+  symbol: string;
+  integrityScore: number;
+  sourceLabel: string;
+  freshnessStatus: string;
+  readinessStatus: string;
+  direction: string;
+  confidence: string;
+  reason: string;
+  status: "OBSERVATION_ONLY";
+}
+
 export interface AutoIntelligenceCycleState {
   enabled: boolean;
   intervalMs: number;
@@ -50,13 +64,17 @@ export interface AutoIntelligenceCycleState {
   symbolsScanned: number;
   symbolsSucceeded: number;
   symbolsFailed: number;
+  observationsCreated: number;
+  observationsSkipped: number;
   history: AutoIntelligenceCycleRunRecord[];
+  autoObservations: AutoObservationRecord[];
 }
 
 export const AUTO_INTELLIGENCE_CYCLE_STORAGE_KEY = "chanter-auto-intelligence-cycle";
 export const DEFAULT_CYCLE_INTERVAL_MS = 15 * 60 * 1000;
 export const MAX_CYCLE_HISTORY = 50;
 export const STALE_THRESHOLD_MS = 20 * 60 * 1000;
+export const MAX_AUTO_OBSERVATIONS = 500;
 
 const TRACKED_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT"] as const;
 
@@ -80,7 +98,10 @@ function getDefaultState(): AutoIntelligenceCycleState {
     symbolsScanned: 0,
     symbolsSucceeded: 0,
     symbolsFailed: 0,
+    observationsCreated: 0,
+    observationsSkipped: 0,
     history: [],
+    autoObservations: [],
   };
 }
 
@@ -121,6 +142,23 @@ function normalizeRunRecord(value: unknown): AutoIntelligenceCycleRunRecord | nu
   };
 }
 
+function isAutoObservationRecord(value: unknown): value is AutoObservationRecord {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const r = value as Record<string, unknown>;
+  if (typeof r.id !== "string" || r.id.trim() === "") return false;
+  if (!isValidDateString(r.timestamp)) return false;
+  if (typeof r.symbol !== "string") return false;
+  if (typeof r.integrityScore !== "number" || !Number.isFinite(r.integrityScore)) return false;
+  if (typeof r.sourceLabel !== "string") return false;
+  if (typeof r.freshnessStatus !== "string") return false;
+  if (typeof r.readinessStatus !== "string") return false;
+  if (typeof r.direction !== "string") return false;
+  if (typeof r.confidence !== "string") return false;
+  if (typeof r.reason !== "string") return false;
+  if (r.status !== "OBSERVATION_ONLY") return false;
+  return true;
+}
+
 export function normalizeAutoIntelligenceCycleState(
   value: unknown,
 ): AutoIntelligenceCycleState | null {
@@ -146,10 +184,20 @@ export function normalizeAutoIntelligenceCycleState(
   if (typeof symbolsSucceeded !== "number" || !Number.isFinite(symbolsSucceeded) || symbolsSucceeded < 0) return null;
   const symbolsFailed = v.symbolsFailed;
   if (typeof symbolsFailed !== "number" || !Number.isFinite(symbolsFailed) || symbolsFailed < 0) return null;
+  const observationsCreated = v.observationsCreated;
+  if (typeof observationsCreated !== "number" || !Number.isFinite(observationsCreated) || observationsCreated < 0) return null;
+  const observationsSkipped = v.observationsSkipped;
+  if (typeof observationsSkipped !== "number" || !Number.isFinite(observationsSkipped) || observationsSkipped < 0) return null;
   if (!Array.isArray(v.history)) return null;
   const history = v.history.map(normalizeRunRecord).filter(
     (r): r is AutoIntelligenceCycleRunRecord => r !== null,
   );
+  // Normalize autoObservations
+  let autoObservations: AutoObservationRecord[] = [];
+  if (Array.isArray(v.autoObservations)) {
+    autoObservations = v.autoObservations.filter(isAutoObservationRecord).slice(0, MAX_AUTO_OBSERVATIONS);
+  }
+
   return {
     enabled: v.enabled,
     intervalMs: intervalMs,
@@ -166,7 +214,10 @@ export function normalizeAutoIntelligenceCycleState(
     symbolsScanned: symbolsScanned,
     symbolsSucceeded: symbolsSucceeded,
     symbolsFailed: symbolsFailed,
+    observationsCreated: observationsCreated,
+    observationsSkipped: observationsSkipped,
     history: history.slice(0, MAX_CYCLE_HISTORY),
+    autoObservations: autoObservations,
   };
 }
 
@@ -266,6 +317,9 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
     let anySuccess = false;
     let successCount = 0;
     let failCount = 0;
+    let observationsCreated = 0;
+    let observationsSkipped = 0;
+    let currentAutoObservations = [...getAutoIntelligenceCycleState().autoObservations];
 
     for (const symbol of TRACKED_SYMBOLS) {
       const result = await fetchLive15mCandles({ symbol, limit: 100 });
@@ -290,6 +344,34 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       lastSource = report.source;
       anySuccess = true;
       successCount += 1;
+
+      // Create auto observation record
+      const obsId = `auto-${symbol}-${result.fetchedAt}`;
+      const existingObs = currentAutoObservations.find(
+        (o) => o.id === obsId || (o.symbol === symbol && o.timestamp === result.fetchedAt),
+      );
+      if (existingObs) {
+        observationsSkipped += 1;
+      } else {
+        const direction = report.candleCount >= 26 ? "WAIT" : "WAIT";
+        const confidence = report.integrityScore >= 85 ? "High" : report.integrityScore >= 50 ? "Medium" : "Low";
+        const reason = `Auto observation: ${symbol} integrity score ${report.integrityScore}/100, readiness ${report.readinessStatus.replace(/_/g, " ")}`;
+        const newObs: AutoObservationRecord = {
+          id: obsId,
+          timestamp: result.fetchedAt,
+          symbol,
+          integrityScore: report.integrityScore,
+          sourceLabel: report.source,
+          freshnessStatus: report.freshnessStatus,
+          readinessStatus: report.readinessStatus,
+          direction,
+          confidence,
+          reason,
+          status: "OBSERVATION_ONLY",
+        };
+        currentAutoObservations = [newObs, ...currentAutoObservations].slice(0, MAX_AUTO_OBSERVATIONS);
+        observationsCreated += 1;
+      }
     }
 
     const completedAt = new Date().toISOString();
@@ -328,7 +410,10 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       symbolsScanned: TRACKED_SYMBOLS.length,
       symbolsSucceeded: successCount,
       symbolsFailed: failCount,
+      observationsCreated,
+      observationsSkipped,
       history: newHistory,
+      autoObservations: currentAutoObservations,
     });
 
     return { ok: anySuccess, error: anySuccess ? undefined : lastError ?? "All fetches failed" };
@@ -364,7 +449,10 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       symbolsScanned: TRACKED_SYMBOLS.length,
       symbolsSucceeded: 0,
       symbolsFailed: TRACKED_SYMBOLS.length,
+      observationsCreated: 0,
+      observationsSkipped: 0,
       history: newHistory,
+      autoObservations: getAutoIntelligenceCycleState().autoObservations,
     });
 
     return { ok: false, error: message };

@@ -770,7 +770,7 @@ export default function CommandCenterDashboard() {
               <Metric
                 label="Symbols"
                 value={localSnapshot.autoCycleState.symbolsScanned > 0 ? `${localSnapshot.autoCycleState.symbolsSucceeded}/${localSnapshot.autoCycleState.symbolsScanned} ok` : "N/A"}
-                detail={localSnapshot.autoCycleState.symbolsFailed > 0 ? `${localSnapshot.autoCycleState.symbolsFailed} failed` : ""}
+                detail={localSnapshot.autoCycleState.observationsCreated > 0 ? `${localSnapshot.autoCycleState.observationsCreated} observations` : localSnapshot.autoCycleState.symbolsFailed > 0 ? `${localSnapshot.autoCycleState.symbolsFailed} failed` : ""}
               />
             </div>
             {(() => {

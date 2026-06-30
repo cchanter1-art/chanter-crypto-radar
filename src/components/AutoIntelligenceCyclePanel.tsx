@@ -220,6 +220,22 @@ export default function AutoIntelligenceCyclePanel() {
         </div>
       </div>
 
+      {/* Metrics row 3: observations */}
+      <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Observations Created</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: state.observationsCreated > 0 ? "#84cc16" : "#6b7280" }}>{state.observationsCreated}</p>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Observations Skipped</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: state.observationsSkipped > 0 ? "#f59e0b" : "#6b7280" }}>{state.observationsSkipped}</p>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Total Auto Obs</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: "#d1d5db" }}>{state.autoObservations?.length ?? 0}</p>
+        </div>
+      </div>
+
       {/* Error */}
       {error && (
         <div className="mb-4 rounded-lg p-3" style={{ background: "rgba(239, 68, 68, 0.06)", border: "1px solid rgba(239, 68, 68, 0.16)" }}>
@@ -276,6 +292,25 @@ export default function AutoIntelligenceCyclePanel() {
           Clear history
         </button>
       </div>
+
+      {/* Recent auto observations */}
+      {state.autoObservations && state.autoObservations.length > 0 && (
+        <details className="mt-4" style={{ borderTop: "1px solid rgba(201, 215, 227, 0.05)", paddingTop: 12 }}>
+          <summary className="cursor-pointer text-xs" style={{ color: "#6b7280" }}>
+            Auto observations -- {state.autoObservations.length} total (latest 10)
+          </summary>
+          <div className="mt-2 space-y-1.5 max-h-48 overflow-auto">
+            {state.autoObservations.slice(0, 10).map((obs, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5" style={{ background: "rgba(201, 215, 227, 0.02)" }}>
+                <span className="text-[11px] font-medium" style={{ color: "#9ca3af" }}>AUTO OBSERVATION - PAPER ONLY</span>
+                <span className="text-[11px]" style={{ color: "#6b7280" }}>{obs.symbol}</span>
+                <span className="text-[11px]" style={{ color: obs.integrityScore >= 70 ? "#22c55e" : obs.integrityScore >= 50 ? "#f59e0b" : "#ef4444" }}>{obs.integrityScore}/100</span>
+                <span className="text-[10px]" style={{ color: "#5f6977" }}>{formatTimestamp(obs.timestamp)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       {/* History */}
       {state.history.length > 0 && (
