@@ -47,6 +47,11 @@ import {
   normalizeForwardTestData,
   type ForwardTestData,
 } from "@/lib/forwardTestSession";
+import {
+  MAX_SIGNAL_QUALITY_HISTORY,
+  normalizeSignalQualityRecord,
+  type SignalQualityRecord,
+} from "@/lib/signalQualityScore";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -88,6 +93,7 @@ export interface LocalDataBackup {
   futuresTestScenario: FuturesTestScenario;
   futuresStrategyBacktests: FuturesStrategyBacktestRun[];
   forwardTestData: ForwardTestData;
+  signalQualityHistory: SignalQualityRecord[];
   settings: AppSettings;
 }
 
@@ -105,6 +111,7 @@ export interface ImportedLocalDataBackup {
   futuresTestScenario: FuturesTestScenario;
   futuresStrategyBacktests: FuturesStrategyBacktestRun[];
   forwardTestData: ForwardTestData;
+  signalQualityHistory: SignalQualityRecord[];
 }
 
 type ValidationResult<T> =
@@ -473,6 +480,27 @@ function validateForwardTestData(value: unknown): ValidationResult<ForwardTestDa
     : { ok: false, message: "Backup forward test session data is invalid." };
 }
 
+function validateSignalQualityHistory(value: unknown): ValidationResult<SignalQualityRecord[]> {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "Backup Signal Quality Score history must be an array." };
+  }
+  const records: SignalQualityRecord[] = [];
+  const recordIds = new Set<string>();
+  for (const item of value) {
+    const record = normalizeSignalQualityRecord(item);
+    if (!record) {
+      return { ok: false, message: "Backup contains an invalid Signal Quality Score record." };
+    }
+    if (recordIds.has(record.id)) {
+      return { ok: false, message: "Backup contains duplicate Signal Quality Score ids." };
+    }
+    recordIds.add(record.id);
+    records.push(record);
+  }
+  return { ok: true, value: records.slice(0, MAX_SIGNAL_QUALITY_HISTORY) };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -521,6 +549,7 @@ export function createLocalDataBackup(
   futuresTestScenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
   futuresStrategyBacktests: FuturesStrategyBacktestRun[] = [],
   forwardTestData: ForwardTestData = { activeSession: null, completedSessions: [] },
+  signalQualityHistory: SignalQualityRecord[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -576,6 +605,10 @@ export function createLocalDataBackup(
       activeSession: null,
       completedSessions: [],
     },
+    signalQualityHistory: signalQualityHistory
+      .map(normalizeSignalQualityRecord)
+      .filter((record): record is SignalQualityRecord => record !== null)
+      .slice(0, MAX_SIGNAL_QUALITY_HISTORY),
     settings: { ...state.settings },
   };
 }
@@ -680,6 +713,11 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${forwardTestData.message}` };
   }
 
+  const signalQualityHistory = validateSignalQualityHistory(parsed.signalQualityHistory);
+  if (signalQualityHistory.ok === false) {
+    return { ok: false, message: `Import failed. ${signalQualityHistory.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -706,6 +744,7 @@ export function parseLocalDataBackup(
       futuresTestScenario: futuresTestScenario.value,
       futuresStrategyBacktests: futuresStrategyBacktests.value,
       forwardTestData: forwardTestData.value,
+      signalQualityHistory: signalQualityHistory.value,
     },
   };
 }

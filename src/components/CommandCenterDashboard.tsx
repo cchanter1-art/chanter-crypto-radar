@@ -7,6 +7,7 @@ import {
   Database,
   Eye,
   FlaskConical,
+  Gauge,
   History,
   Layers3,
   Radar,
@@ -35,6 +36,7 @@ import {
   getLatestForwardTestObservation,
   loadForwardTestData,
 } from "@/lib/forwardTestSession";
+import { loadLatestSignalQualityScore } from "@/lib/signalQualityScore";
 import {
   loadPaperRiskJournal,
   loadPaperRiskSettings,
@@ -234,6 +236,7 @@ export default function CommandCenterDashboard() {
     backtests: loadBacktestHistory(),
     futuresStrategyBacktests: loadFuturesStrategyBacktestHistory(),
     forwardTestData: loadForwardTestData(),
+    latestSignalQuality: loadLatestSignalQualityScore(),
     futuresHistory: loadFuturesPaperHistory(),
     futuresPositions: loadFuturesPaperPositions(),
     futuresSettings: loadFuturesPaperSettings(),
@@ -544,6 +547,38 @@ export default function CommandCenterDashboard() {
           <p className="mt-4 text-xs leading-5" style={{ color: "#6b7280" }}>
             Observation only / paper only. Forward testing records data only when Add observation tick is clicked; no position is opened.
           </p>
+        </SectionCard>
+
+        <SectionCard
+          id="signal-quality-summary-title"
+          title="Signal Quality Intelligence"
+          subtitle="Latest transparent paper-signal evaluation"
+          icon={<Gauge size={17} />}
+          badge="Informational only · paper only"
+          className="mt-6"
+        >
+          {localSnapshot.latestSignalQuality ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                <Metric label="Latest score" value={`${localSnapshot.latestSignalQuality.score} / 100`} />
+                <Metric label="Quality label" value={localSnapshot.latestSignalQuality.label} />
+                <Metric
+                  label="Setup"
+                  value={`${localSnapshot.latestSignalQuality.input.symbol} · ${localSnapshot.latestSignalQuality.input.profile}`}
+                  detail={localSnapshot.latestSignalQuality.input.scenario}
+                />
+                <Metric label="Risk status" value={localSnapshot.latestSignalQuality.input.riskStatus} />
+                <Metric label="Evidence" value={localSnapshot.latestSignalQuality.evidenceStatus} />
+              </div>
+              <p className="mt-4 text-xs leading-5" style={{ color: "#6b7280" }}>
+                Signal Quality Score is informational only. Risk Engine remains the final gate and no order is created.
+              </p>
+            </>
+          ) : (
+            <p className="rounded-lg p-4 text-sm" style={{ color: "#6b7280", background: "rgba(201, 215, 227, 0.025)" }}>
+              No saved Signal Quality Score is available. Generate one from Analytics.
+            </p>
+          )}
         </SectionCard>
 
         <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
