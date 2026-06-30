@@ -5,6 +5,7 @@ import {
   BarChart3,
   Clock3,
   Database,
+  Eye,
   FlaskConical,
   History,
   Layers3,
@@ -29,6 +30,11 @@ import {
 } from "@/lib/localMultiTimeframeAnalysis";
 import { loadBacktestHistory } from "@/lib/paperBacktestEngine";
 import { loadFuturesStrategyBacktestHistory } from "@/lib/futuresStrategyBacktest";
+import {
+  getForwardTestSummary,
+  getLatestForwardTestObservation,
+  loadForwardTestData,
+} from "@/lib/forwardTestSession";
 import {
   loadPaperRiskJournal,
   loadPaperRiskSettings,
@@ -227,6 +233,7 @@ export default function CommandCenterDashboard() {
     riskJournal: loadPaperRiskJournal(),
     backtests: loadBacktestHistory(),
     futuresStrategyBacktests: loadFuturesStrategyBacktestHistory(),
+    forwardTestData: loadForwardTestData(),
     futuresHistory: loadFuturesPaperHistory(),
     futuresPositions: loadFuturesPaperPositions(),
     futuresSettings: loadFuturesPaperSettings(),
@@ -271,6 +278,12 @@ export default function CommandCenterDashboard() {
   >(
     (best, run) => !best || run.metrics.returnPercent > best.metrics.returnPercent ? run : best,
     null,
+  );
+  const forwardTestSession = localSnapshot.forwardTestData.activeSession ??
+    localSnapshot.forwardTestData.completedSessions[0] ?? null;
+  const forwardTestSummary = getForwardTestSummary(forwardTestSession);
+  const latestForwardTestObservation = getLatestForwardTestObservation(
+    localSnapshot.forwardTestData,
   );
 
   const futuresLiquidationState = localSnapshot.futuresPositions.length === 0
@@ -497,6 +510,40 @@ export default function CommandCenterDashboard() {
               No saved futures strategy validation runs are available. Run the 15m Futures Strategy Backtest from Analytics.
             </p>
           )}
+        </SectionCard>
+
+        <SectionCard
+          id="forward-test-summary-title"
+          title="Forward Test Observation"
+          subtitle="Manual strategy and risk observations"
+          icon={<Eye size={17} />}
+          badge={localSnapshot.forwardTestData.activeSession
+            ? "Active · observation only"
+            : "Inactive · paper only"}
+          className="mt-6"
+        >
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            <Metric
+              label="Session status"
+              value={localSnapshot.forwardTestData.activeSession ? "Active" : "Inactive"}
+              detail="Manual ticks only"
+            />
+            <Metric
+              label="Latest observation"
+              value={latestForwardTestObservation
+                ? `${latestForwardTestObservation.direction} · ${latestForwardTestObservation.riskStatus}`
+                : "None"}
+              detail={latestForwardTestObservation
+                ? formatTimestamp(latestForwardTestObservation.timestamp)
+                : "No observation recorded"}
+            />
+            <Metric label="Actionable" value={`${forwardTestSummary.actionableSignals}`} />
+            <Metric label="Risk blocked" value={`${forwardTestSummary.riskBlockedCount}`} />
+            <Metric label="WAIT" value={`${forwardTestSummary.waitCount}`} />
+          </div>
+          <p className="mt-4 text-xs leading-5" style={{ color: "#6b7280" }}>
+            Observation only / paper only. Forward testing records data only when Add observation tick is clicked; no position is opened.
+          </p>
         </SectionCard>
 
         <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">

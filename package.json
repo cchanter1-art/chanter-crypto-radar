@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:futures-backtest": "node scripts/verify-futures-strategy-backtest.mjs",
+    "test:forward-session": "node scripts/verify-forward-test-session.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

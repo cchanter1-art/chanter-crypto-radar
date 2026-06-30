@@ -7,6 +7,7 @@ import PaperSignalEngine from "@/components/PaperSignalEngine";
 import BacktestEngine from "@/components/BacktestEngine";
 import FuturesPaperPanel from "@/components/FuturesPaperPanel";
 import FuturesStrategyBacktestPanel from "@/components/FuturesStrategyBacktestPanel";
+import ForwardTestSessionPanel from "@/components/ForwardTestSessionPanel";
 
 export default function AnalyticsSection() {
   return (
@@ -30,6 +31,8 @@ export default function AnalyticsSection() {
       <BacktestEngine />
 
       <FuturesStrategyBacktestPanel />
+
+      <ForwardTestSessionPanel />
 
       <FuturesPaperPanel className="mt-8" />
 

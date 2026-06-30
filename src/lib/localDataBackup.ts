@@ -43,6 +43,10 @@ import {
   normalizeFuturesStrategyBacktestRun,
   type FuturesStrategyBacktestRun,
 } from "@/lib/futuresStrategyBacktest";
+import {
+  normalizeForwardTestData,
+  type ForwardTestData,
+} from "@/lib/forwardTestSession";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -83,6 +87,7 @@ export interface LocalDataBackup {
   futuresStrategyProfile: FuturesStrategyProfile;
   futuresTestScenario: FuturesTestScenario;
   futuresStrategyBacktests: FuturesStrategyBacktestRun[];
+  forwardTestData: ForwardTestData;
   settings: AppSettings;
 }
 
@@ -99,6 +104,7 @@ export interface ImportedLocalDataBackup {
   futuresStrategyProfile: FuturesStrategyProfile;
   futuresTestScenario: FuturesTestScenario;
   futuresStrategyBacktests: FuturesStrategyBacktestRun[];
+  forwardTestData: ForwardTestData;
 }
 
 type ValidationResult<T> =
@@ -457,6 +463,16 @@ function validateFuturesStrategyBacktests(
   return { ok: true, value: runs.slice(0, MAX_FUTURES_STRATEGY_BACKTEST_HISTORY) };
 }
 
+function validateForwardTestData(value: unknown): ValidationResult<ForwardTestData> {
+  if (value === undefined) {
+    return { ok: true, value: { activeSession: null, completedSessions: [] } };
+  }
+  const normalized = normalizeForwardTestData(value);
+  return normalized
+    ? { ok: true, value: normalized }
+    : { ok: false, message: "Backup forward test session data is invalid." };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -504,6 +520,7 @@ export function createLocalDataBackup(
   futuresStrategyProfile: FuturesStrategyProfile = DEFAULT_FUTURES_STRATEGY_PROFILE,
   futuresTestScenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
   futuresStrategyBacktests: FuturesStrategyBacktestRun[] = [],
+  forwardTestData: ForwardTestData = { activeSession: null, completedSessions: [] },
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -555,6 +572,10 @@ export function createLocalDataBackup(
       .map(normalizeFuturesStrategyBacktestRun)
       .filter((run): run is FuturesStrategyBacktestRun => run !== null)
       .slice(0, MAX_FUTURES_STRATEGY_BACKTEST_HISTORY),
+    forwardTestData: normalizeForwardTestData(forwardTestData) ?? {
+      activeSession: null,
+      completedSessions: [],
+    },
     settings: { ...state.settings },
   };
 }
@@ -654,6 +675,11 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${futuresStrategyBacktests.message}` };
   }
 
+  const forwardTestData = validateForwardTestData(parsed.forwardTestData);
+  if (forwardTestData.ok === false) {
+    return { ok: false, message: `Import failed. ${forwardTestData.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -679,6 +705,7 @@ export function parseLocalDataBackup(
       futuresStrategyProfile: futuresStrategyProfile.value,
       futuresTestScenario: futuresTestScenario.value,
       futuresStrategyBacktests: futuresStrategyBacktests.value,
+      forwardTestData: forwardTestData.value,
     },
   };
 }
