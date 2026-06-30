@@ -9,6 +9,14 @@ import {
   MAX_PAPER_SIGNAL_HISTORY,
   type PaperSignal,
 } from "@/lib/paperSignalEngine";
+import {
+  DEFAULT_PAPER_RISK_SETTINGS,
+  MAX_PAPER_RISK_JOURNAL,
+  normalizePaperRiskJournalEntry,
+  normalizePaperRiskSettings,
+  type PaperRiskJournalEntry,
+  type PaperRiskSettings,
+} from "@/lib/paperRiskController";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -40,6 +48,8 @@ export interface LocalDataBackup {
   priceAlerts: PriceAlert[];
   paperSignals: PaperSignal[];
   backtestRuns: BacktestRun[];
+  riskControllerSettings: PaperRiskSettings;
+  riskJournal: PaperRiskJournalEntry[];
   settings: AppSettings;
 }
 
@@ -47,6 +57,8 @@ export interface ImportedLocalDataBackup {
   state: AppState;
   paperSignals: PaperSignal[];
   backtestRuns: BacktestRun[];
+  riskSettings: PaperRiskSettings;
+  riskJournal: PaperRiskJournalEntry[];
 }
 
 type ValidationResult<T> =
@@ -252,6 +264,44 @@ function validateBacktestRuns(value: unknown): ValidationResult<BacktestRun[]> {
   return { ok: true, value: runs.slice(0, MAX_BACKTEST_HISTORY) };
 }
 
+function validateRiskSettings(value: unknown): ValidationResult<PaperRiskSettings> {
+  if (value === undefined) {
+    return { ok: true, value: { ...DEFAULT_PAPER_RISK_SETTINGS } };
+  }
+
+  const settings = normalizePaperRiskSettings(value);
+  if (!settings) {
+    return { ok: false, message: "Backup Paper Risk Controller settings are invalid." };
+  }
+
+  return { ok: true, value: settings };
+}
+
+function validateRiskJournal(value: unknown): ValidationResult<PaperRiskJournalEntry[]> {
+  if (value === undefined) return { ok: true, value: [] };
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "Backup Risk Journal must be an array." };
+  }
+
+  const entries: PaperRiskJournalEntry[] = [];
+  const entryIds = new Set<string>();
+
+  for (const item of value) {
+    const entry = normalizePaperRiskJournalEntry(item);
+    if (!entry) {
+      return { ok: false, message: "Backup contains an invalid Risk Journal record." };
+    }
+    if (entryIds.has(entry.id)) {
+      return { ok: false, message: "Backup contains duplicate Risk Journal ids." };
+    }
+
+    entryIds.add(entry.id);
+    entries.push(entry);
+  }
+
+  return { ok: true, value: entries.slice(0, MAX_PAPER_RISK_JOURNAL) };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -290,6 +340,8 @@ export function createLocalDataBackup(
   state: AppState,
   paperSignals: PaperSignal[] = [],
   backtestRuns: BacktestRun[] = [],
+  riskSettings: PaperRiskSettings = DEFAULT_PAPER_RISK_SETTINGS,
+  riskJournal: PaperRiskJournalEntry[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -313,6 +365,12 @@ export function createLocalDataBackup(
         signalCounts: { ...run.signalCounts },
         events: run.events.map((event) => ({ ...event })),
       })),
+    riskControllerSettings:
+      normalizePaperRiskSettings(riskSettings) ?? { ...DEFAULT_PAPER_RISK_SETTINGS },
+    riskJournal: riskJournal
+      .map(normalizePaperRiskJournalEntry)
+      .filter((entry): entry is PaperRiskJournalEntry => entry !== null)
+      .slice(0, MAX_PAPER_RISK_JOURNAL),
     settings: { ...state.settings },
   };
 }
@@ -365,6 +423,16 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${backtestRuns.message}` };
   }
 
+  const riskSettings = validateRiskSettings(parsed.riskControllerSettings);
+  if (riskSettings.ok === false) {
+    return { ok: false, message: `Import failed. ${riskSettings.message}` };
+  }
+
+  const riskJournal = validateRiskJournal(parsed.riskJournal);
+  if (riskJournal.ok === false) {
+    return { ok: false, message: `Import failed. ${riskJournal.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -381,6 +449,8 @@ export function parseLocalDataBackup(
       },
       paperSignals: paperSignals.value,
       backtestRuns: backtestRuns.value,
+      riskSettings: riskSettings.value,
+      riskJournal: riskJournal.value,
     },
   };
 }

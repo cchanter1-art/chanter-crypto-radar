@@ -1,7 +1,7 @@
 import { useRef, useState, type ChangeEvent } from "react";
 import { useAppState } from "@/context/AppContext";
 import ToggleSwitch from "@/components/ToggleSwitch";
-import { Download, Trash2, Upload } from "lucide-react";
+import { Download, RotateCcw, ShieldCheck, Trash2, Upload } from "lucide-react";
 import {
   createEmptyLocalAppState,
   createLocalDataBackup,
@@ -17,11 +17,37 @@ import {
   loadBacktestHistory,
   saveBacktestHistory,
 } from "@/lib/paperBacktestEngine";
+import {
+  clearPaperRiskJournal,
+  clearPaperRiskSettings,
+  DEFAULT_PAPER_RISK_SETTINGS,
+  loadPaperRiskJournal,
+  loadPaperRiskSettings,
+  MAX_PAPER_RISK_JOURNAL,
+  savePaperRiskJournal,
+  savePaperRiskSettings,
+  validatePaperRiskSettings,
+  type PaperRiskSettings,
+} from "@/lib/paperRiskController";
 
 type DataStatus = {
   type: "success" | "error";
   message: string;
 };
+
+function formatRiskJournalTime(timestamp: string): string {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
+}
+
+function getRiskDecisionColor(decision: string): string {
+  if (decision === "APPROVED") return "#22c55e";
+  if (decision === "BLOCKED") return "#ef4444";
+  if (decision === "REDUCED") return "#f59e0b";
+  return "#9ca3af";
+}
 
 export default function SettingsSection() {
   const { state, dispatch } = useAppState();
@@ -32,6 +58,9 @@ export default function SettingsSection() {
   });
   const [saved, setSaved] = useState(false);
   const [dataStatus, setDataStatus] = useState<DataStatus | null>(null);
+  const [riskSettings, setRiskSettings] = useState<PaperRiskSettings>(loadPaperRiskSettings);
+  const [riskJournal, setRiskJournal] = useState(loadPaperRiskJournal);
+  const [riskStatus, setRiskStatus] = useState<DataStatus | null>(null);
 
   const handleSave = () => {
     dispatch({
@@ -50,6 +79,8 @@ export default function SettingsSection() {
       state,
       loadPaperSignalHistory(),
       loadBacktestHistory(),
+      loadPaperRiskSettings(),
+      loadPaperRiskJournal(),
     );
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -83,20 +114,24 @@ export default function SettingsSection() {
       }
 
       const previousPaperSignals = loadPaperSignalHistory();
+      const previousBacktests = loadBacktestHistory();
+      const previousRiskSettings = loadPaperRiskSettings();
+      const previousRiskJournal = loadPaperRiskJournal();
 
-      if (!savePaperSignalHistory(result.value.paperSignals)) {
-        setDataStatus({
-          type: "error",
-          message: "Import failed. Paper signal history could not be saved in this browser.",
-        });
-        return;
-      }
+      const didSaveLocalHistories =
+        savePaperSignalHistory(result.value.paperSignals) &&
+        saveBacktestHistory(result.value.backtestRuns) &&
+        savePaperRiskSettings(result.value.riskSettings) &&
+        savePaperRiskJournal(result.value.riskJournal);
 
-      if (!saveBacktestHistory(result.value.backtestRuns)) {
+      if (!didSaveLocalHistories) {
         savePaperSignalHistory(previousPaperSignals);
+        saveBacktestHistory(previousBacktests);
+        savePaperRiskSettings(previousRiskSettings);
+        savePaperRiskJournal(previousRiskJournal);
         setDataStatus({
           type: "error",
-          message: "Import failed. Backtest history could not be saved in this browser.",
+          message: "Import failed. Local signal, backtest, or risk data could not be saved in this browser.",
         });
         return;
       }
@@ -106,6 +141,9 @@ export default function SettingsSection() {
         displayName: result.value.state.settings.displayName,
         email: result.value.state.settings.email,
       });
+      setRiskSettings(result.value.riskSettings);
+      setRiskJournal(result.value.riskJournal);
+      setRiskStatus(null);
       setDataStatus({ type: "success", message: "Local backup imported." });
     } catch {
       setDataStatus({
@@ -125,12 +163,57 @@ export default function SettingsSection() {
       dispatch({ type: "LOAD_STATE", payload: emptyState });
       clearPaperSignalHistory();
       clearBacktestHistory();
+      clearPaperRiskSettings();
+      clearPaperRiskJournal();
       setFormData({
         displayName: emptyState.settings.displayName,
         email: emptyState.settings.email,
       });
+      setRiskSettings({ ...DEFAULT_PAPER_RISK_SETTINGS });
+      setRiskJournal([]);
+      setRiskStatus(null);
       setDataStatus({ type: "success", message: "Local app data cleared." });
     }
+  };
+
+  const handleSaveRiskRules = () => {
+    const error = validatePaperRiskSettings(riskSettings);
+    if (error) {
+      setRiskStatus({ type: "error", message: error });
+      return;
+    }
+
+    setRiskStatus(
+      savePaperRiskSettings(riskSettings)
+        ? { type: "success", message: "Paper risk rules saved locally." }
+        : { type: "error", message: "Paper risk rules could not be saved in this browser." },
+    );
+  };
+
+  const handleRestoreRiskRules = () => {
+    const defaults = { ...DEFAULT_PAPER_RISK_SETTINGS };
+    setRiskSettings(defaults);
+    setRiskStatus(
+      savePaperRiskSettings(defaults)
+        ? { type: "success", message: "Default paper risk rules restored." }
+        : { type: "error", message: "Default paper risk rules could not be saved." },
+    );
+  };
+
+  const handleClearRiskJournal = () => {
+    if (!window.confirm("Clear the browser-local Paper Risk Journal?")) return;
+
+    if (clearPaperRiskJournal()) {
+      setRiskJournal([]);
+      setRiskStatus({ type: "success", message: "Paper Risk Journal cleared." });
+    } else {
+      setRiskStatus({ type: "error", message: "Paper Risk Journal could not be cleared." });
+    }
+  };
+
+  const updateRiskSetting = (key: keyof PaperRiskSettings, value: string) => {
+    setRiskSettings((current) => ({ ...current, [key]: Number(value) }));
+    setRiskStatus(null);
   };
 
   return (
@@ -234,6 +317,207 @@ export default function SettingsSection() {
           </div>
         </div>
 
+        {/* Paper Risk Controller */}
+        <div
+          className="card-surface rounded-xl p-5 lg:p-6"
+          style={{ border: "1px solid rgba(201,215,227,0.06)" }}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <ShieldCheck size={16} style={{ color: "#cc9258" }} />
+                <h3 className="label-upper" style={{ color: "#c9d7e3" }}>
+                  Paper Risk Controller
+                </h3>
+              </div>
+              <p className="text-sm" style={{ color: "#9ca3af", lineHeight: 1.6 }}>
+                Local thresholds applied before a paper trade form can open from a signal.
+              </p>
+            </div>
+            <span
+              className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.08em]"
+              style={{ color: "#cc9258", border: "1px solid rgba(204,146,88,0.24)" }}
+            >
+              Local / Paper
+            </span>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="risk-max-allocation" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+                Max allocation per coin (%)
+              </label>
+              <input
+                id="risk-max-allocation"
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={riskSettings.maxAllocationPerCoinPercent}
+                onChange={(event) => updateRiskSetting("maxAllocationPerCoinPercent", event.target.value)}
+                className="input-dark"
+              />
+            </div>
+            <div>
+              <label htmlFor="risk-max-trade-size" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+                Max trade size (%)
+              </label>
+              <input
+                id="risk-max-trade-size"
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={riskSettings.maxTradeSizePercent}
+                onChange={(event) => updateRiskSetting("maxTradeSizePercent", event.target.value)}
+                className="input-dark"
+              />
+            </div>
+            <div>
+              <label htmlFor="risk-drawdown-warning" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+                Drawdown warning (%)
+              </label>
+              <input
+                id="risk-drawdown-warning"
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={riskSettings.maxDrawdownWarningPercent}
+                onChange={(event) => updateRiskSetting("maxDrawdownWarningPercent", event.target.value)}
+                className="input-dark"
+              />
+            </div>
+            <div>
+              <label htmlFor="risk-buy-block" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+                Block new buys at drawdown (%)
+              </label>
+              <input
+                id="risk-buy-block"
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={riskSettings.blockBuyDrawdownPercent}
+                onChange={(event) => updateRiskSetting("blockBuyDrawdownPercent", event.target.value)}
+                className="input-dark"
+              />
+            </div>
+            <div>
+              <label htmlFor="risk-loss-cooldown" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+                Loss cooldown (hours)
+              </label>
+              <input
+                id="risk-loss-cooldown"
+                type="number"
+                min="0"
+                max="168"
+                step="1"
+                value={riskSettings.lossCooldownHours}
+                onChange={(event) => updateRiskSetting("lossCooldownHours", event.target.value)}
+                className="input-dark"
+              />
+            </div>
+          </div>
+
+          <div
+            className="mt-5 rounded-lg p-4"
+            style={{ backgroundColor: "rgba(201,215,227,0.02)", border: "1px solid rgba(201,215,227,0.05)" }}
+          >
+            <p className="text-xs" style={{ color: "#9ca3af", lineHeight: 1.6 }}>
+              Low-confidence signals wait. Buys are blocked at the allocation or buy-drawdown limit.
+              Drawdown warnings reduce suggested buy size, and sells cannot exceed current holdings.
+            </p>
+            <p className="mt-2 text-xs" style={{ color: "#6b7280" }}>
+              Paper risk controller only. No real orders are placed.
+            </p>
+            <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>
+              For tracking only. Not financial advice.
+            </p>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button type="button" onClick={handleSaveRiskRules} className="btn-accent flex items-center gap-2">
+              <ShieldCheck size={14} />
+              Save Risk Rules
+            </button>
+            <button type="button" onClick={handleRestoreRiskRules} className="btn-primary flex items-center gap-2">
+              <RotateCcw size={14} />
+              Restore Defaults
+            </button>
+          </div>
+
+          {riskStatus && (
+            <p
+              role={riskStatus.type === "error" ? "alert" : "status"}
+              className="mt-4 text-xs"
+              style={{ color: riskStatus.type === "success" ? "#22c55e" : "#ef4444" }}
+            >
+              {riskStatus.message}
+            </p>
+          )}
+
+          <div className="mt-6" style={{ borderTop: "1px solid rgba(201,215,227,0.05)", paddingTop: 20 }}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="label-upper" style={{ color: "#6b7280", fontSize: 10 }}>
+                  Risk Journal
+                </p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>
+                  {riskJournal.length} / {MAX_PAPER_RISK_JOURNAL} local gate decisions stored
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleClearRiskJournal}
+                className="btn-danger flex items-center gap-2"
+                disabled={riskJournal.length === 0}
+              >
+                <Trash2 size={14} />
+                Clear Journal
+              </button>
+            </div>
+
+            {riskJournal.length === 0 ? (
+              <div className="mt-4 rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
+                <p className="text-xs" style={{ color: "#6b7280" }}>
+                  No signal trade decisions recorded yet.
+                </p>
+              </div>
+            ) : (
+              <details className="mt-4">
+                <summary className="cursor-pointer text-xs" style={{ color: "#6b7280" }}>
+                  View Risk Journal
+                </summary>
+                <div className="mt-3 grid gap-2">
+                  {riskJournal.map((entry) => (
+                    <article
+                      key={entry.id}
+                      className="rounded-md p-3"
+                      style={{ backgroundColor: "rgba(201,215,227,0.018)", border: "1px solid rgba(201,215,227,0.04)" }}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="data-mono text-xs" style={{ color: "#c9d7e3" }}>
+                          {entry.symbol} · {entry.signal}
+                        </span>
+                        <span className="text-[10px] font-semibold" style={{ color: getRiskDecisionColor(entry.decision) }}>
+                          {entry.decision}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs" style={{ color: "#6b7280", lineHeight: 1.6 }}>
+                        {entry.reason}
+                      </p>
+                      <time className="mt-2 block text-[10px]" style={{ color: "#4b5563" }} dateTime={entry.timestamp}>
+                        {formatRiskJournalTime(entry.timestamp)}
+                      </time>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        </div>
+
         {/* Export / Import */}
         <div
           className="card-surface rounded-xl p-5 lg:p-6"
@@ -255,7 +539,7 @@ export default function SettingsSection() {
             }}
           >
             Back up or restore your watchlist, paper trades, price alerts, paper signal history,
-            saved backtests, and app settings.
+            saved backtests, Risk Controller rules, Risk Journal, and app settings.
           </p>
           <p
             className="mb-5 text-xs"

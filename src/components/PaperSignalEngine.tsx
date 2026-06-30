@@ -11,6 +11,13 @@ import {
   type PaperSignal,
   type PaperSignalLabel,
 } from "@/lib/paperSignalEngine";
+import {
+  appendPaperRiskDecision,
+  evaluatePaperRisk,
+  loadPaperRiskSettings,
+  type PaperRiskDecision,
+  type PaperRiskDecisionType,
+} from "@/lib/paperRiskController";
 import type { PaperTrade } from "@/types";
 
 interface PaperSignalEngineProps {
@@ -24,6 +31,18 @@ const SIGNAL_COLORS: Record<PaperSignalLabel, string> = {
   AVOID: "#f59e0b",
 };
 
+const RISK_DECISION_COLORS: Record<PaperRiskDecisionType, string> = {
+  APPROVED: "#22c55e",
+  BLOCKED: "#ef4444",
+  REDUCED: "#f59e0b",
+  WAIT: "#9ca3af",
+};
+
+interface SelectedPaperSignal {
+  signal: PaperSignal;
+  decision: PaperRiskDecision;
+}
+
 function formatSignalTime(timestamp: string): string {
   return new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
@@ -35,7 +54,12 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
   const { state, dispatch, coins, priceStatus } = useAppState();
   const { positions, totalValue, totalPLPercent } = usePortfolio();
   const [history, setHistory] = useState<PaperSignal[]>(loadPaperSignalHistory);
-  const [selectedSignal, setSelectedSignal] = useState<PaperSignal | null>(null);
+  const [riskSettings] = useState(loadPaperRiskSettings);
+  const [selectedSignal, setSelectedSignal] = useState<SelectedPaperSignal | null>(null);
+  const [gateResult, setGateResult] = useState<{
+    signalId: string;
+    decision: PaperRiskDecision;
+  } | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
 
   const latestTimestamp = history[0]?.timestamp;
@@ -76,6 +100,36 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
 
   const handleAddTrade = (trade: PaperTrade) => {
     dispatch({ type: "ADD_TRADE", payload: trade });
+  };
+
+  const getRiskDecision = (signal: PaperSignal): PaperRiskDecision => {
+    const currentPrice = coins.find((coin) => coin.id === signal.coinId)?.price ?? 0;
+    return evaluatePaperRisk({
+      signal,
+      positions,
+      trades: state.trades,
+      totalValue,
+      totalPLPercent,
+      currentPrice,
+      priceStatus,
+      settings: riskSettings,
+    });
+  };
+
+  const handleTradeRequest = (signal: PaperSignal) => {
+    const decision = getRiskDecision(signal);
+    const journalResult = appendPaperRiskDecision(signal, decision);
+
+    setGateResult({ signalId: signal.id, decision });
+    setStorageError(
+      journalResult.ok
+        ? null
+        : "Risk decision was applied, but the local Risk Journal could not be saved.",
+    );
+
+    if (decision.decision === "APPROVED" || decision.decision === "REDUCED") {
+      setSelectedSignal({ signal, decision });
+    }
   };
 
   return (
@@ -119,6 +173,9 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
         </p>
         <p className="mt-2 text-xs" style={{ color: "#6b7280" }}>
           Paper signal only. No real orders are placed.
+        </p>
+        <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+          Paper risk controller only. No real orders are placed.
         </p>
         <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>
           For tracking only. Not financial advice.
@@ -164,6 +221,11 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
           {latestSignals.map((signal) => {
             const signalColor = SIGNAL_COLORS[signal.label];
             const isActionable = signal.label === "BUY" || signal.label === "SELL";
+            const riskDecision = getRiskDecision(signal);
+            const decisionColor = RISK_DECISION_COLORS[riskDecision.decision];
+            const latestGateResult = gateResult?.signalId === signal.id
+              ? gateResult.decision
+              : null;
 
             return (
               <article
@@ -197,6 +259,33 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
                 <p className="mt-3 text-xs" style={{ color: "#6b7280", lineHeight: 1.6 }}>
                   Risk note: {signal.riskNote}
                 </p>
+                <div
+                  className="mt-3 rounded-md p-3"
+                  style={{
+                    backgroundColor: `${decisionColor}08`,
+                    border: `1px solid ${decisionColor}24`,
+                  }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>
+                      Risk Controller
+                    </span>
+                    <span className="text-[10px] font-semibold tracking-[0.08em]" style={{ color: decisionColor }}>
+                      {riskDecision.decision}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs" style={{ color: "#9ca3af", lineHeight: 1.6 }}>
+                    {riskDecision.reason}
+                  </p>
+                  {riskDecision.decision === "REDUCED" && riskDecision.suggestedMaxTradeValue && (
+                    <p className="mt-2 data-mono text-xs" style={{ color: "#f59e0b" }}>
+                      Suggested max: ${riskDecision.suggestedMaxTradeValue.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  )}
+                </div>
                 <time className="mt-3 block text-[10px]" style={{ color: "#4b5563" }} dateTime={signal.timestamp}>
                   {formatSignalTime(signal.timestamp)}
                 </time>
@@ -204,7 +293,7 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
                 {isActionable ? (
                   <button
                     type="button"
-                    onClick={() => setSelectedSignal(signal)}
+                    onClick={() => handleTradeRequest(signal)}
                     className="mt-4 flex items-center gap-2 text-xs transition-colors hover:text-[#cc9258]"
                     style={{ color: "#9ca3af" }}
                   >
@@ -216,6 +305,13 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
                     No paper trade action for {signal.label}
                   </p>
                 )}
+
+                {latestGateResult &&
+                  (latestGateResult.decision === "WAIT" || latestGateResult.decision === "BLOCKED") && (
+                    <p role="status" className="mt-3 text-xs" style={{ color: RISK_DECISION_COLORS[latestGateResult.decision] }}>
+                      {latestGateResult.decision}: {latestGateResult.reason}
+                    </p>
+                  )}
               </article>
             );
           })}
@@ -249,10 +345,16 @@ export default function PaperSignalEngine({ className = "" }: PaperSignalEngineP
         </details>
       )}
 
-      {selectedSignal && (selectedSignal.label === "BUY" || selectedSignal.label === "SELL") && (
+      {selectedSignal &&
+        (selectedSignal.signal.label === "BUY" || selectedSignal.signal.label === "SELL") && (
         <AddTradeModal
-          initialCoinId={selectedSignal.coinId}
-          initialType={selectedSignal.label === "BUY" ? "buy" : "sell"}
+          initialCoinId={selectedSignal.signal.coinId}
+          initialType={selectedSignal.signal.label === "BUY" ? "buy" : "sell"}
+          initialAmount={selectedSignal.decision.decision === "REDUCED"
+            ? selectedSignal.decision.suggestedQuantity
+            : undefined}
+          maxTradeValue={selectedSignal.decision.suggestedMaxTradeValue}
+          lockSignalSelection
           onAdd={handleAddTrade}
           onClose={() => setSelectedSignal(null)}
         />

@@ -13,6 +13,9 @@ interface AddTradeModalProps {
   onAdd: (trade: PaperTrade) => void;
   initialCoinId?: string;
   initialType?: "buy" | "sell";
+  initialAmount?: number;
+  maxTradeValue?: number;
+  lockSignalSelection?: boolean;
 }
 
 export default function AddTradeModal({
@@ -20,12 +23,19 @@ export default function AddTradeModal({
   onAdd,
   initialCoinId = "",
   initialType = "buy",
+  initialAmount,
+  maxTradeValue,
+  lockSignalSelection = false,
 }: AddTradeModalProps) {
   const { state, coins } = useAppState();
   const safeInitialCoinId = isSupportedPaperCoin(initialCoinId) ? initialCoinId : "";
   const [coinId, setCoinId] = useState(safeInitialCoinId);
   const [type, setType] = useState<"buy" | "sell">(initialType);
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(() =>
+    initialAmount !== undefined && Number.isFinite(initialAmount) && initialAmount > 0
+      ? initialAmount.toFixed(8).replace(/\.?0+$/, "")
+      : "",
+  );
   const [price, setPrice] = useState(() => {
     const initialCoin = coins.find((coin) => coin.id === safeInitialCoinId);
     return initialCoin ? initialCoin.price.toFixed(2) : "";
@@ -60,6 +70,19 @@ export default function AddTradeModal({
     if (type === "sell" && numericAmount > availableHoldings) {
       setFormError(
         `Sell quantity exceeds current holdings of ${availableHoldings.toFixed(8)} ${selectedCoin.symbol}.`,
+      );
+      return;
+    }
+    if (
+      maxTradeValue !== undefined &&
+      Number.isFinite(maxTradeValue) &&
+      numericAmount * numericPrice > maxTradeValue + 0.01
+    ) {
+      setFormError(
+        `Trade value exceeds the local risk limit of $${maxTradeValue.toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}.`,
       );
       return;
     }
@@ -117,6 +140,18 @@ export default function AddTradeModal({
           Paper trades only. No real orders are placed.
         </p>
 
+        {lockSignalSelection && (
+          <p className="mb-5 text-xs" style={{ color: "#6b7280" }}>
+            Coin and trade type are locked to the evaluated paper signal.
+            {maxTradeValue !== undefined && Number.isFinite(maxTradeValue)
+              ? ` Maximum paper trade value: $${maxTradeValue.toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}.`
+              : ""}
+          </p>
+        )}
+
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex gap-2">
             <button
@@ -129,6 +164,7 @@ export default function AddTradeModal({
                 color: type === "buy" ? "#22c55e" : "#4b5563",
               }}
               aria-pressed={type === "buy"}
+              disabled={lockSignalSelection}
             >
               <ArrowDownLeft size={14} />
               <span className="label-upper" style={{ fontSize: 12 }}>Buy</span>
@@ -143,6 +179,7 @@ export default function AddTradeModal({
                 color: type === "sell" ? "#ef4444" : "#4b5563",
               }}
               aria-pressed={type === "sell"}
+              disabled={lockSignalSelection}
             >
               <ArrowUpRight size={14} />
               <span className="label-upper" style={{ fontSize: 12 }}>Sell</span>
@@ -164,6 +201,7 @@ export default function AddTradeModal({
               }}
               className="input-dark cursor-pointer"
               required
+              disabled={lockSignalSelection}
             >
               <option value="" disabled>Select coin...</option>
               {coins.map((coin) => (
