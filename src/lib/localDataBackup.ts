@@ -21,7 +21,9 @@ import {
   type PaperRiskSettings,
 } from "@/lib/paperRiskController";
 import {
+  DEFAULT_FUTURES_TEST_SCENARIO,
   DEFAULT_FUTURES_PAPER_SETTINGS,
+  isFuturesTestScenario,
   MAX_FUTURES_PAPER_HISTORY,
   normalizeFuturesHistoryRecord,
   normalizeFuturesPaperPosition,
@@ -29,6 +31,7 @@ import {
   type FuturesPaperHistoryRecord,
   type FuturesPaperPosition,
   type FuturesPaperSettings,
+  type FuturesTestScenario,
 } from "@/lib/futuresPaperEngine";
 import {
   DEFAULT_FUTURES_STRATEGY_PROFILE,
@@ -73,6 +76,7 @@ export interface LocalDataBackup {
   futuresPaperPositions: FuturesPaperPosition[];
   futuresPaperHistory: FuturesPaperHistoryRecord[];
   futuresStrategyProfile: FuturesStrategyProfile;
+  futuresTestScenario: FuturesTestScenario;
   settings: AppSettings;
 }
 
@@ -87,6 +91,7 @@ export interface ImportedLocalDataBackup {
   futuresPositions: FuturesPaperPosition[];
   futuresHistory: FuturesPaperHistoryRecord[];
   futuresStrategyProfile: FuturesStrategyProfile;
+  futuresTestScenario: FuturesTestScenario;
 }
 
 type ValidationResult<T> =
@@ -409,6 +414,17 @@ function validateFuturesStrategyProfile(
     : { ok: false, message: "Backup futures strategy profile is invalid." };
 }
 
+function validateFuturesTestScenario(
+  value: unknown,
+): ValidationResult<FuturesTestScenario> {
+  if (value === undefined) {
+    return { ok: true, value: DEFAULT_FUTURES_TEST_SCENARIO };
+  }
+  return isFuturesTestScenario(value)
+    ? { ok: true, value }
+    : { ok: false, message: "Backup futures test scenario is invalid." };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -454,6 +470,7 @@ export function createLocalDataBackup(
   futuresPositions: FuturesPaperPosition[] = [],
   futuresHistory: FuturesPaperHistoryRecord[] = [],
   futuresStrategyProfile: FuturesStrategyProfile = DEFAULT_FUTURES_STRATEGY_PROFILE,
+  futuresTestScenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -498,6 +515,9 @@ export function createLocalDataBackup(
     futuresStrategyProfile: isFuturesStrategyProfile(futuresStrategyProfile)
       ? futuresStrategyProfile
       : DEFAULT_FUTURES_STRATEGY_PROFILE,
+    futuresTestScenario: isFuturesTestScenario(futuresTestScenario)
+      ? futuresTestScenario
+      : DEFAULT_FUTURES_TEST_SCENARIO,
     settings: { ...state.settings },
   };
 }
@@ -585,6 +605,11 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${futuresStrategyProfile.message}` };
   }
 
+  const futuresTestScenario = validateFuturesTestScenario(parsed.futuresTestScenario);
+  if (futuresTestScenario.ok === false) {
+    return { ok: false, message: `Import failed. ${futuresTestScenario.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -608,6 +633,7 @@ export function parseLocalDataBackup(
       futuresPositions: futuresPositions.value,
       futuresHistory: futuresHistory.value,
       futuresStrategyProfile: futuresStrategyProfile.value,
+      futuresTestScenario: futuresTestScenario.value,
     },
   };
 }

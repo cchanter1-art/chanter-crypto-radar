@@ -1,6 +1,15 @@
 import type { PaperRiskSettings } from "@/lib/paperRiskController";
 
 export type FuturesSymbol = "BTCUSDT" | "ETHUSDT" | "SOLUSDT" | "ADAUSDT" | "AVAXUSDT";
+export type FuturesTestScenario =
+  | "Neutral / Current Mock"
+  | "Trending Up"
+  | "Trending Down"
+  | "Breakout Up"
+  | "Breakout Down"
+  | "Mean Reversion Oversold"
+  | "Mean Reversion Overbought"
+  | "Choppy / No Trade";
 export type FuturesDirection = "LONG" | "SHORT";
 export type FuturesPositionState = FuturesDirection | "FLAT";
 export type FuturesLeverage = 1 | 2 | 3 | 5;
@@ -24,6 +33,7 @@ export interface FuturesPaperSettings {
 
 export interface FuturesPaperTradeInput {
   symbol: FuturesSymbol;
+  scenario: FuturesTestScenario;
   direction: FuturesDirection;
   entryPrice: number;
   marginAmount: number;
@@ -83,6 +93,7 @@ interface EvaluateFuturesRiskInput {
 export const FUTURES_PAPER_SETTINGS_STORAGE_KEY = "chanter-futures-paper-settings";
 export const FUTURES_PAPER_POSITIONS_STORAGE_KEY = "chanter-futures-paper-positions";
 export const FUTURES_PAPER_HISTORY_STORAGE_KEY = "chanter-futures-paper-history";
+export const FUTURES_TEST_SCENARIO_STORAGE_KEY = "chanter-futures-test-scenario";
 export const MAX_FUTURES_PAPER_HISTORY = 100;
 export const SUPPORTED_FUTURES_SYMBOLS: FuturesSymbol[] = [
   "BTCUSDT",
@@ -92,6 +103,17 @@ export const SUPPORTED_FUTURES_SYMBOLS: FuturesSymbol[] = [
   "AVAXUSDT",
 ];
 export const SUPPORTED_FUTURES_LEVERAGE: FuturesLeverage[] = [1, 2, 3, 5];
+export const SUPPORTED_FUTURES_TEST_SCENARIOS: FuturesTestScenario[] = [
+  "Neutral / Current Mock",
+  "Trending Up",
+  "Trending Down",
+  "Breakout Up",
+  "Breakout Down",
+  "Mean Reversion Oversold",
+  "Mean Reversion Overbought",
+  "Choppy / No Trade",
+];
+export const DEFAULT_FUTURES_TEST_SCENARIO: FuturesTestScenario = "Neutral / Current Mock";
 export const DEFAULT_FUTURES_PAPER_SETTINGS: FuturesPaperSettings = {
   timeframe: "15m",
   marginMode: "isolated",
@@ -103,6 +125,9 @@ export const DEFAULT_FUTURES_PAPER_SETTINGS: FuturesPaperSettings = {
 const SUPPORTED_SYMBOL_SET = new Set<string>(SUPPORTED_FUTURES_SYMBOLS);
 const SUPPORTED_LEVERAGE_SET = new Set<number>(SUPPORTED_FUTURES_LEVERAGE);
 const DIRECTIONS = new Set<FuturesDirection>(["LONG", "SHORT"]);
+const FUTURES_TEST_SCENARIO_SET = new Set<FuturesTestScenario>(
+  SUPPORTED_FUTURES_TEST_SCENARIOS,
+);
 const MOCK_CANDLE_COUNT = 96;
 const MOCK_CANDLE_END_UTC = Date.UTC(2026, 5, 30, 0, 0, 0);
 const MIN_LIQUIDATION_STOP_BUFFER_PERCENT = 1;
@@ -151,6 +176,11 @@ function isFuturesLeverage(value: unknown): value is FuturesLeverage {
   return isFiniteNumber(value) && SUPPORTED_LEVERAGE_SET.has(value);
 }
 
+export function isFuturesTestScenario(value: unknown): value is FuturesTestScenario {
+  return typeof value === "string" &&
+    FUTURES_TEST_SCENARIO_SET.has(value as FuturesTestScenario);
+}
+
 function createId(prefix: string): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -164,7 +194,7 @@ function roundPrice(value: number): number {
   return Number(value.toFixed(6));
 }
 
-export function getMock15mCandles(symbol: FuturesSymbol): FuturesMockCandle[] {
+function getNeutralMock15mCandles(symbol: FuturesSymbol): FuturesMockCandle[] {
   const basePrice = MOCK_BASE_PRICES[symbol];
   const volatility = MOCK_VOLATILITY[symbol];
   const symbolOffset = SUPPORTED_FUTURES_SYMBOLS.indexOf(symbol) + 1;
@@ -192,8 +222,89 @@ export function getMock15mCandles(symbol: FuturesSymbol): FuturesMockCandle[] {
   });
 }
 
-export function getFuturesMockMarkPrice(symbol: FuturesSymbol): number {
-  return getMock15mCandles(symbol).at(-1)?.close ?? MOCK_BASE_PRICES[symbol];
+function buildScenarioCandles(
+  symbol: FuturesSymbol,
+  neutralCandles: FuturesMockCandle[],
+  scenario: FuturesTestScenario,
+): FuturesMockCandle[] {
+  if (scenario === DEFAULT_FUTURES_TEST_SCENARIO) return neutralCandles;
+
+  const basePrice = MOCK_BASE_PRICES[symbol];
+  const volatility = MOCK_VOLATILITY[symbol];
+  const closes = neutralCandles.map((candle) => candle.close);
+
+  if (scenario === "Trending Up" || scenario === "Trending Down") {
+    const direction = scenario === "Trending Up" ? 1 : -1;
+    for (let index = 0; index < closes.length; index += 1) {
+      const progress = index / (closes.length - 1);
+      const wave = Math.sin(index * 0.55) * volatility * 0.25;
+      closes[index] = basePrice * (1 + direction * progress * 0.12 + wave);
+    }
+  } else if (scenario === "Breakout Up" || scenario === "Breakout Down") {
+    const direction = scenario === "Breakout Up" ? 1 : -1;
+    for (let index = 0; index < closes.length - 1; index += 1) {
+      closes[index] = basePrice * (
+        1 + Math.sin(index * 0.62) * volatility * 0.7 +
+        Math.cos(index * 0.21) * volatility * 0.3
+      );
+    }
+    const priorCloses = closes.slice(0, -1);
+    closes[closes.length - 1] = direction > 0
+      ? Math.max(...priorCloses) * 1.025
+      : Math.min(...priorCloses) * 0.975;
+  } else if (
+    scenario === "Mean Reversion Oversold" ||
+    scenario === "Mean Reversion Overbought"
+  ) {
+    const direction = scenario === "Mean Reversion Oversold" ? -1 : 1;
+    for (let index = 0; index < closes.length; index += 1) {
+      const tailProgress = index >= closes.length - 8
+        ? (index - (closes.length - 8) + 1) / 8
+        : 0;
+      closes[index] = basePrice * (
+        1 + Math.sin(index * 0.43) * volatility * 0.5 + direction * tailProgress * 0.06
+      );
+    }
+  } else {
+    for (let index = 0; index < closes.length; index += 1) {
+      closes[index] = basePrice * (
+        1 + Math.sin(index * 1.7) * volatility * 0.35 +
+        Math.cos(index * 2.3) * volatility * 0.2
+      );
+    }
+  }
+
+  return neutralCandles.map((candle, index) => {
+    const open = index === 0 ? closes[0] : closes[index - 1];
+    const close = Math.max(0.000001, closes[index]);
+    const wick = Math.max(Math.abs(close - open) * 0.25, basePrice * volatility * 0.18);
+    return {
+      timestamp: candle.timestamp,
+      open: roundPrice(open),
+      high: roundPrice(Math.max(open, close) + wick),
+      low: roundPrice(Math.max(0.000001, Math.min(open, close) - wick)),
+      close: roundPrice(close),
+    };
+  });
+}
+
+export function getMock15mCandles(
+  symbol: FuturesSymbol,
+  scenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
+): FuturesMockCandle[] {
+  const neutralCandles = getNeutralMock15mCandles(symbol);
+  return buildScenarioCandles(
+    symbol,
+    neutralCandles,
+    isFuturesTestScenario(scenario) ? scenario : DEFAULT_FUTURES_TEST_SCENARIO,
+  );
+}
+
+export function getFuturesMockMarkPrice(
+  symbol: FuturesSymbol,
+  scenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
+): number {
+  return getMock15mCandles(symbol, scenario).at(-1)?.close ?? MOCK_BASE_PRICES[symbol];
 }
 
 function calculateMetrics(
@@ -452,6 +563,7 @@ export function normalizeFuturesPaperSettings(value: unknown): FuturesPaperSetti
 function normalizeTradeFields(value: Record<string, unknown>): FuturesPaperTradeInput | null {
   if (
     !isFuturesSymbol(value.symbol) ||
+    (value.scenario !== undefined && !isFuturesTestScenario(value.scenario)) ||
     !isFuturesDirection(value.direction) ||
     !isFiniteNumber(value.entryPrice) ||
     value.entryPrice <= 0 ||
@@ -471,6 +583,9 @@ function normalizeTradeFields(value: Record<string, unknown>): FuturesPaperTrade
 
   return {
     symbol: value.symbol,
+    scenario: isFuturesTestScenario(value.scenario)
+      ? value.scenario
+      : DEFAULT_FUTURES_TEST_SCENARIO,
     direction: value.direction,
     entryPrice: value.entryPrice,
     marginAmount: value.marginAmount,
@@ -640,11 +755,40 @@ export function clearFuturesPaperHistory(): boolean {
   }
 }
 
+export function loadFuturesTestScenario(): FuturesTestScenario {
+  try {
+    const stored = localStorage.getItem(FUTURES_TEST_SCENARIO_STORAGE_KEY);
+    return isFuturesTestScenario(stored) ? stored : DEFAULT_FUTURES_TEST_SCENARIO;
+  } catch {
+    return DEFAULT_FUTURES_TEST_SCENARIO;
+  }
+}
+
+export function saveFuturesTestScenario(scenario: FuturesTestScenario): boolean {
+  if (!isFuturesTestScenario(scenario)) return false;
+  try {
+    localStorage.setItem(FUTURES_TEST_SCENARIO_STORAGE_KEY, scenario);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearFuturesTestScenario(): boolean {
+  try {
+    localStorage.removeItem(FUTURES_TEST_SCENARIO_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function clearFuturesPaperData(): boolean {
   try {
     localStorage.removeItem(FUTURES_PAPER_SETTINGS_STORAGE_KEY);
     localStorage.removeItem(FUTURES_PAPER_POSITIONS_STORAGE_KEY);
     localStorage.removeItem(FUTURES_PAPER_HISTORY_STORAGE_KEY);
+    localStorage.removeItem(FUTURES_TEST_SCENARIO_STORAGE_KEY);
     return true;
   } catch {
     return false;

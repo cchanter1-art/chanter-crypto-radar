@@ -1,9 +1,11 @@
 import {
+  DEFAULT_FUTURES_TEST_SCENARIO,
   getMock15mCandles,
   type FuturesDirection,
   type FuturesLeverage,
   type FuturesMockCandle,
   type FuturesSymbol,
+  type FuturesTestScenario,
 } from "@/lib/futuresPaperEngine";
 
 export type FuturesStrategyProfile =
@@ -255,8 +257,9 @@ function generateMeanReversion(
 export function generateFuturesStrategySetup(
   profile: Exclude<FuturesStrategyProfile, "Manual">,
   symbol: FuturesSymbol,
+  scenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
 ): FuturesStrategySetup {
-  const candles = getMock15mCandles(symbol);
+  const candles = getMock15mCandles(symbol, scenario);
   if (profile === "Trend Follow") return generateTrendFollow(symbol, candles);
   if (profile === "Breakout") return generateBreakout(symbol, candles);
   return generateMeanReversion(symbol, candles);

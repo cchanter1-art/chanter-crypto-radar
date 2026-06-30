@@ -5,6 +5,7 @@ import {
   clearFuturesPaperHistory,
   createFuturesHistoryRecord,
   createFuturesPaperPosition,
+  DEFAULT_FUTURES_TEST_SCENARIO,
   evaluateFuturesPaperRisk,
   getFuturesMockMarkPrice,
   getFuturesPositionMetrics,
@@ -12,19 +13,23 @@ import {
   loadFuturesPaperHistory,
   loadFuturesPaperPositions,
   loadFuturesPaperSettings,
+  loadFuturesTestScenario,
   MAX_FUTURES_PAPER_HISTORY,
   recordFuturesDailyLoss,
   saveFuturesPaperHistory,
   saveFuturesPaperPositions,
   saveFuturesPaperSettings,
+  saveFuturesTestScenario,
   SUPPORTED_FUTURES_LEVERAGE,
   SUPPORTED_FUTURES_SYMBOLS,
+  SUPPORTED_FUTURES_TEST_SCENARIOS,
   type FuturesDirection,
   type FuturesLeverage,
   type FuturesPaperPosition,
   type FuturesPaperTradeInput,
   type FuturesRiskDecisionType,
   type FuturesSymbol,
+  type FuturesTestScenario,
 } from "@/lib/futuresPaperEngine";
 import { loadPaperRiskSettings } from "@/lib/paperRiskController";
 import {
@@ -57,12 +62,14 @@ const DECISION_COLORS: Record<FuturesRiskDecisionType, string> = {
   WAIT: "#9ca3af",
 };
 
-function createInitialForm(): FuturesFormState {
+function createInitialForm(
+  scenario: FuturesTestScenario = DEFAULT_FUTURES_TEST_SCENARIO,
+): FuturesFormState {
   const symbol: FuturesSymbol = "BTCUSDT";
   return {
     symbol,
     direction: "LONG",
-    entryPrice: String(getFuturesMockMarkPrice(symbol)),
+    entryPrice: String(getFuturesMockMarkPrice(symbol, scenario)),
     marginAmount: "500",
     leverage: 1,
     stopLossPercent: "5",
@@ -98,7 +105,11 @@ function formatTimestamp(timestamp: string): string {
 
 export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelProps) {
   const { totalValue } = usePortfolio();
-  const [form, setForm] = useState<FuturesFormState>(createInitialForm);
+  const [selectedScenario, setSelectedScenario] =
+    useState<FuturesTestScenario>(loadFuturesTestScenario);
+  const [form, setForm] = useState<FuturesFormState>(() =>
+    createInitialForm(selectedScenario),
+  );
   const [positions, setPositions] = useState(loadFuturesPaperPositions);
   const [history, setHistory] = useState(loadFuturesPaperHistory);
   const [settings, setSettings] = useState(loadFuturesPaperSettings);
@@ -109,9 +120,10 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
     useState<FuturesStrategyProfile>(loadFuturesStrategyProfile);
   const [generatedSetup, setGeneratedSetup] = useState<FuturesStrategySetup | null>(null);
 
-  const markPrice = getFuturesMockMarkPrice(form.symbol);
+  const markPrice = getFuturesMockMarkPrice(form.symbol, selectedScenario);
   const trade: FuturesPaperTradeInput = {
     symbol: form.symbol,
+    scenario: selectedScenario,
     direction: form.direction,
     entryPrice: Number(form.entryPrice),
     marginAmount: Number(form.marginAmount),
@@ -144,10 +156,24 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
     setForm((current) => ({
       ...current,
       symbol,
-      entryPrice: String(getFuturesMockMarkPrice(symbol)),
+      entryPrice: String(getFuturesMockMarkPrice(symbol, selectedScenario)),
     }));
     setGeneratedSetup(null);
     setStatus(null);
+  };
+
+  const handleScenarioChange = (scenario: FuturesTestScenario) => {
+    setSelectedScenario(scenario);
+    setGeneratedSetup(null);
+    setForm((current) => ({
+      ...current,
+      entryPrice: String(getFuturesMockMarkPrice(current.symbol, scenario)),
+    }));
+    setStatus(
+      saveFuturesTestScenario(scenario)
+        ? null
+        : { type: "error", message: "The selected strategy test scenario could not be saved." },
+    );
   };
 
   const handleProfileChange = (profile: FuturesStrategyProfile) => {
@@ -163,7 +189,11 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
   const handleGenerateSetup = () => {
     if (selectedProfile === "Manual") return;
 
-    const setup = generateFuturesStrategySetup(selectedProfile, form.symbol);
+    const setup = generateFuturesStrategySetup(
+      selectedProfile,
+      form.symbol,
+      selectedScenario,
+    );
     setGeneratedSetup(setup);
 
     if (setup.suggestedDirection === "WAIT") {
@@ -251,7 +281,7 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
   };
 
   const handleClosePosition = (position: FuturesPaperPosition) => {
-    const closeMarkPrice = getFuturesMockMarkPrice(position.symbol);
+    const closeMarkPrice = getFuturesMockMarkPrice(position.symbol, position.scenario);
     const record = createFuturesHistoryRecord(position, "CLOSE", closeMarkPrice);
     const nextPositions = positions.filter((item) => item.id !== position.id);
     const nextHistory = [record, ...history].slice(0, MAX_FUTURES_PAPER_HISTORY);
@@ -317,6 +347,8 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
         <p style={{ color: "#9ca3af" }}>Futures Paper Mode only. No real orders are placed.</p>
         <p style={{ color: "#9ca3af" }}>Strategy profiles generate paper setups only.</p>
         <p style={{ color: "#9ca3af" }}>15m profiles use local/mock candle data.</p>
+        <p style={{ color: "#9ca3af" }}>Scenarios are mock datasets for strategy testing only.</p>
+        <p style={{ color: "#6b7280" }}>They do not represent live market conditions.</p>
         <p style={{ color: "#6b7280" }}>Leverage increases liquidation risk.</p>
         <p style={{ color: "#6b7280" }}>Isolated margin simulation only.</p>
         <p style={{ color: "#6b7280" }}>Past simulated behavior does not predict future results.</p>
@@ -327,7 +359,7 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
         className="mt-6 rounded-xl p-4 lg:p-5"
         style={{ backgroundColor: "rgba(201,215,227,0.02)", border: "1px solid rgba(201,215,227,0.05)" }}
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
           <div>
             <label htmlFor="futures-strategy-profile" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
               Futures strategy profile
@@ -340,6 +372,21 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
             >
               {FUTURES_STRATEGY_PROFILES.map((profile) => (
                 <option key={profile} value={profile}>{profile}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="futures-test-scenario" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+              Strategy test scenario
+            </label>
+            <select
+              id="futures-test-scenario"
+              value={selectedScenario}
+              onChange={(event) => handleScenarioChange(event.target.value as FuturesTestScenario)}
+              className="input-dark cursor-pointer"
+            >
+              {SUPPORTED_FUTURES_TEST_SCENARIOS.map((scenario) => (
+                <option key={scenario} value={scenario}>{scenario}</option>
               ))}
             </select>
           </div>
@@ -362,7 +409,7 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
                   {generatedSetup.symbol} · {generatedSetup.profile}
                 </p>
                 <p className="mt-1 text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>
-                  Confidence · {generatedSetup.confidence}
+                  Confidence · {generatedSetup.confidence} · Scenario · {selectedScenario}
                 </p>
               </div>
               <span
@@ -535,7 +582,10 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
         ) : (
           <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
             {positions.map((position) => {
-              const positionMark = getFuturesMockMarkPrice(position.symbol);
+              const positionMark = getFuturesMockMarkPrice(
+                position.symbol,
+                position.scenario,
+              );
               const metrics = getFuturesPositionMetrics(position, positionMark);
               return (
                 <article key={position.id} className="rounded-lg p-4" style={{ backgroundColor: "rgba(201,215,227,0.018)", border: "1px solid rgba(201,215,227,0.05)" }}>
