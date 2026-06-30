@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, ShieldAlert, Trash2, XCircle } from "lucide-react";
+import { Activity, ShieldAlert, Sparkles, Trash2, XCircle } from "lucide-react";
 import { usePortfolio } from "@/context/AppContext";
 import {
   clearFuturesPaperHistory,
@@ -27,6 +27,14 @@ import {
   type FuturesSymbol,
 } from "@/lib/futuresPaperEngine";
 import { loadPaperRiskSettings } from "@/lib/paperRiskController";
+import {
+  FUTURES_STRATEGY_PROFILES,
+  generateFuturesStrategySetup,
+  loadFuturesStrategyProfile,
+  saveFuturesStrategyProfile,
+  type FuturesStrategyProfile,
+  type FuturesStrategySetup,
+} from "@/lib/futuresStrategyProfiles";
 
 interface FuturesPaperPanelProps {
   className?: string;
@@ -97,6 +105,9 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
   const [dailyLossInput, setDailyLossInput] = useState(String(settings.maxDailyLossPercent));
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [riskSettings] = useState(loadPaperRiskSettings);
+  const [selectedProfile, setSelectedProfile] =
+    useState<FuturesStrategyProfile>(loadFuturesStrategyProfile);
+  const [generatedSetup, setGeneratedSetup] = useState<FuturesStrategySetup | null>(null);
 
   const markPrice = getFuturesMockMarkPrice(form.symbol);
   const trade: FuturesPaperTradeInput = {
@@ -135,7 +146,46 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
       symbol,
       entryPrice: String(getFuturesMockMarkPrice(symbol)),
     }));
+    setGeneratedSetup(null);
     setStatus(null);
+  };
+
+  const handleProfileChange = (profile: FuturesStrategyProfile) => {
+    setSelectedProfile(profile);
+    setGeneratedSetup(null);
+    setStatus(
+      saveFuturesStrategyProfile(profile)
+        ? null
+        : { type: "error", message: "The selected futures strategy profile could not be saved." },
+    );
+  };
+
+  const handleGenerateSetup = () => {
+    if (selectedProfile === "Manual") return;
+
+    const setup = generateFuturesStrategySetup(selectedProfile, form.symbol);
+    setGeneratedSetup(setup);
+
+    if (setup.suggestedDirection === "WAIT") {
+      setStatus(null);
+      return;
+    }
+    const suggestedDirection: FuturesDirection = setup.suggestedDirection;
+
+    setForm((current) => ({
+      ...current,
+      symbol: setup.symbol,
+      direction: suggestedDirection,
+      entryPrice: String(setup.entryReference),
+      leverage: setup.leverageSuggestion,
+      stopLossPercent: String(setup.stopLossPercent),
+      takeProfitPercent: String(setup.takeProfitPercent),
+      strategyReason: setup.strategyReason,
+    }));
+    setStatus({
+      type: "success",
+      message: `${setup.profile} paper setup generated. Review the Futures Risk Preview before opening manually.`,
+    });
   };
 
   const handleSaveDailyLoss = () => {
@@ -155,6 +205,11 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
   };
 
   const handleOpenPosition = () => {
+    if (generatedSetup?.suggestedDirection === "WAIT") {
+      setStatus({ type: "error", message: "The generated strategy setup is WAIT and cannot open a futures paper position." });
+      return;
+    }
+
     const latestPreview = evaluateFuturesPaperRisk({
       trade,
       markPrice,
@@ -260,10 +315,92 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
 
       <div className="mt-5 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
         <p style={{ color: "#9ca3af" }}>Futures Paper Mode only. No real orders are placed.</p>
-        <p style={{ color: "#9ca3af" }}>15m simulation uses local/mock candle data.</p>
+        <p style={{ color: "#9ca3af" }}>Strategy profiles generate paper setups only.</p>
+        <p style={{ color: "#9ca3af" }}>15m profiles use local/mock candle data.</p>
         <p style={{ color: "#6b7280" }}>Leverage increases liquidation risk.</p>
         <p style={{ color: "#6b7280" }}>Isolated margin simulation only.</p>
+        <p style={{ color: "#6b7280" }}>Past simulated behavior does not predict future results.</p>
         <p style={{ color: "#4b5563" }}>For tracking only. Not financial advice.</p>
+      </div>
+
+      <div
+        className="mt-6 rounded-xl p-4 lg:p-5"
+        style={{ backgroundColor: "rgba(201,215,227,0.02)", border: "1px solid rgba(201,215,227,0.05)" }}
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div>
+            <label htmlFor="futures-strategy-profile" className="label-upper mb-2 block" style={{ color: "#4b5563", fontSize: 10 }}>
+              Futures strategy profile
+            </label>
+            <select
+              id="futures-strategy-profile"
+              value={selectedProfile}
+              onChange={(event) => handleProfileChange(event.target.value as FuturesStrategyProfile)}
+              className="input-dark cursor-pointer"
+            >
+              {FUTURES_STRATEGY_PROFILES.map((profile) => (
+                <option key={profile} value={profile}>{profile}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={handleGenerateSetup}
+            className="btn-accent flex items-center justify-center gap-2"
+            disabled={selectedProfile === "Manual"}
+          >
+            <Sparkles size={14} />
+            Generate futures paper setup
+          </button>
+        </div>
+
+        {generatedSetup && (
+          <div className="mt-5" style={{ borderTop: "1px solid rgba(201,215,227,0.05)", paddingTop: 16 }}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="data-mono text-sm" style={{ color: "#c9d7e3" }}>
+                  {generatedSetup.symbol} · {generatedSetup.profile}
+                </p>
+                <p className="mt-1 text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>
+                  Confidence · {generatedSetup.confidence}
+                </p>
+              </div>
+              <span
+                className="rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-[0.08em]"
+                style={{
+                  color: generatedSetup.suggestedDirection === "LONG"
+                    ? "#22c55e"
+                    : generatedSetup.suggestedDirection === "SHORT"
+                      ? "#ef4444"
+                      : "#9ca3af",
+                  border: "1px solid rgba(201,215,227,0.12)",
+                }}
+              >
+                {generatedSetup.suggestedDirection}
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <PreviewMetric label="Entry reference" value={formatPrice(generatedSetup.entryReference)} />
+              <PreviewMetric label="Stop-loss" value={`${generatedSetup.stopLossPercent.toFixed(2)}%`} />
+              <PreviewMetric label="Take-profit" value={`${generatedSetup.takeProfitPercent.toFixed(2)}%`} />
+              <PreviewMetric label="Leverage suggestion" value={`${generatedSetup.leverageSuggestion}x`} />
+            </div>
+            <p className="mt-4 text-xs" style={{ color: "#9ca3af", lineHeight: 1.6 }}>
+              {generatedSetup.strategyReason}
+            </p>
+            <p className="mt-2 text-xs" style={{ color: "#6b7280", lineHeight: 1.6 }}>
+              Invalidation: {generatedSetup.invalidationNote}
+            </p>
+            <p className="mt-2 text-xs" style={{ color: "#4b5563", lineHeight: 1.6 }}>
+              Risk note: {generatedSetup.riskNote}
+            </p>
+            {generatedSetup.suggestedDirection === "WAIT" && (
+              <p className="mt-3 text-xs" style={{ color: "#f59e0b" }}>
+                WAIT setups do not modify the actionable futures paper form.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_1fr]">
@@ -327,7 +464,15 @@ export default function FuturesPaperPanel({ className = "" }: FuturesPaperPanelP
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button type="button" onClick={handleOpenPosition} className="btn-accent" disabled={preview.decision !== "APPROVED"}>
+            <button
+              type="button"
+              onClick={handleOpenPosition}
+              className="btn-accent"
+              disabled={
+                preview.decision !== "APPROVED" ||
+                generatedSetup?.suggestedDirection === "WAIT"
+              }
+            >
               Open futures paper position
             </button>
             <span className="text-xs" style={{ color: "#4b5563" }}>

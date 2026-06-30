@@ -30,6 +30,11 @@ import {
   type FuturesPaperPosition,
   type FuturesPaperSettings,
 } from "@/lib/futuresPaperEngine";
+import {
+  DEFAULT_FUTURES_STRATEGY_PROFILE,
+  isFuturesStrategyProfile,
+  type FuturesStrategyProfile,
+} from "@/lib/futuresStrategyProfiles";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -67,6 +72,7 @@ export interface LocalDataBackup {
   futuresPaperSettings: FuturesPaperSettings;
   futuresPaperPositions: FuturesPaperPosition[];
   futuresPaperHistory: FuturesPaperHistoryRecord[];
+  futuresStrategyProfile: FuturesStrategyProfile;
   settings: AppSettings;
 }
 
@@ -80,6 +86,7 @@ export interface ImportedLocalDataBackup {
   futuresSettings: FuturesPaperSettings;
   futuresPositions: FuturesPaperPosition[];
   futuresHistory: FuturesPaperHistoryRecord[];
+  futuresStrategyProfile: FuturesStrategyProfile;
 }
 
 type ValidationResult<T> =
@@ -391,6 +398,17 @@ function validateFuturesHistory(value: unknown): ValidationResult<FuturesPaperHi
   return { ok: true, value: records.slice(0, MAX_FUTURES_PAPER_HISTORY) };
 }
 
+function validateFuturesStrategyProfile(
+  value: unknown,
+): ValidationResult<FuturesStrategyProfile> {
+  if (value === undefined) {
+    return { ok: true, value: DEFAULT_FUTURES_STRATEGY_PROFILE };
+  }
+  return isFuturesStrategyProfile(value)
+    ? { ok: true, value }
+    : { ok: false, message: "Backup futures strategy profile is invalid." };
+}
+
 function validateSettings(value: unknown): ValidationResult<AppSettings> {
   if (!isRecord(value)) {
     return { ok: false, message: "Backup settings must be an object." };
@@ -435,6 +453,7 @@ export function createLocalDataBackup(
   futuresSettings: FuturesPaperSettings = DEFAULT_FUTURES_PAPER_SETTINGS,
   futuresPositions: FuturesPaperPosition[] = [],
   futuresHistory: FuturesPaperHistoryRecord[] = [],
+  futuresStrategyProfile: FuturesStrategyProfile = DEFAULT_FUTURES_STRATEGY_PROFILE,
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -476,6 +495,9 @@ export function createLocalDataBackup(
       .map(normalizeFuturesHistoryRecord)
       .filter((record): record is FuturesPaperHistoryRecord => record !== null)
       .slice(0, MAX_FUTURES_PAPER_HISTORY),
+    futuresStrategyProfile: isFuturesStrategyProfile(futuresStrategyProfile)
+      ? futuresStrategyProfile
+      : DEFAULT_FUTURES_STRATEGY_PROFILE,
     settings: { ...state.settings },
   };
 }
@@ -558,6 +580,11 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${futuresHistory.message}` };
   }
 
+  const futuresStrategyProfile = validateFuturesStrategyProfile(parsed.futuresStrategyProfile);
+  if (futuresStrategyProfile.ok === false) {
+    return { ok: false, message: `Import failed. ${futuresStrategyProfile.message}` };
+  }
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -580,6 +607,7 @@ export function parseLocalDataBackup(
       futuresSettings: futuresSettings.value,
       futuresPositions: futuresPositions.value,
       futuresHistory: futuresHistory.value,
+      futuresStrategyProfile: futuresStrategyProfile.value,
     },
   };
 }
