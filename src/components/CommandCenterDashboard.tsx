@@ -10,6 +10,7 @@ import {
   Gauge,
   History,
   Layers3,
+  ListChecks,
   Radar,
   ShieldCheck,
   Zap,
@@ -40,6 +41,7 @@ import {
 import { loadLatestSignalQualityScore, buildEvidenceStack, applyEvidenceModifier } from "@/lib/signalQualityScore";
 import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive, getLatestAutoObservation } from "@/lib/autoIntelligenceCycle";
+import { getCandidateSummary } from "@/lib/candidateReviewQueue";
 import {
   loadPaperRiskJournal,
   loadPaperRiskSettings,
@@ -278,6 +280,7 @@ function createLocalSnapshot() {
     futuresPositions: loadFuturesPaperPositions(),
     futuresSettings: loadFuturesPaperSettings(),
     scenario: loadFuturesTestScenario(),
+    candidateSummary: getCandidateSummary(),
     storage: getStorageHealth(),
     checkedAt: Date.now(),
   };
@@ -865,6 +868,51 @@ export default function CommandCenterDashboard() {
           </SectionCard>
 
 <SectionCard
+            id="candidate-queue-title"
+            title="Candidate Review Queue"
+            subtitle="Review-only intelligence candidates"
+            icon={<ListChecks size={17} />}
+            badge={localSnapshot.candidateSummary.total > 0 ? localSnapshot.candidateSummary.review + " review" : "Empty"}
+          >
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+              <Metric
+                label="Review"
+                value={`${localSnapshot.candidateSummary.review}`}
+                detail="High-priority candidates"
+              />
+              <Metric
+                label="Watch"
+                value={`${localSnapshot.candidateSummary.watch}`}
+                detail="Moderate score candidates"
+              />
+              <Metric
+                label="Blocked"
+                value={`${localSnapshot.candidateSummary.blocked}`}
+                detail="Low score or risk-blocked"
+              />
+              <Metric
+                label="Stale"
+                value={`${localSnapshot.candidateSummary.stale}`}
+                detail="Data freshness issues"
+              />
+              <Metric
+                label="Latest symbol"
+                value={localSnapshot.candidateSummary.latestSymbol ?? "N/A"}
+                detail={localSnapshot.candidateSummary.latestScore !== null ? `Score: ${localSnapshot.candidateSummary.latestScore}` : ""}
+              />
+              <Metric
+                label="Last update"
+                value={localSnapshot.candidateSummary.lastUpdate ? formatTimestamp(localSnapshot.candidateSummary.lastUpdate) : "Never"}
+                detail="Last queue modification"
+              />
+            </div>
+            <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+              <ShieldCheck className="mt-0.5 shrink-0" size={13} />
+              <p>Review-only. No orders. No paper positions. Not financial advice.</p>
+            </div>
+          </SectionCard>
+
+          <SectionCard
             id="system-health-title"
             title="System Health"
             subtitle="Local runtime and data-source visibility"

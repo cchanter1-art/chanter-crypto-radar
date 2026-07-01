@@ -21,6 +21,13 @@ import {
   loadMarketDataIntegrityHistory,
   saveMarketDataIntegrityHistory,
 } from "@/lib/marketDataIntegrity";
+import {
+  buildCandidateFromSnapshot,
+  addOrUpdateCandidate,
+} from "@/lib/candidateReviewQueue";
+import {
+  loadLatestSignalQualityScore,
+} from "@/lib/signalQualityScore";
 
 export type AutoCycleStatus = "passed" | "failed" | "running";
 
@@ -421,6 +428,28 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       history: newHistory,
       autoObservations: currentAutoObservations,
     });
+
+    // Build candidate review records from latest evidence snapshot
+    if (anySuccess) {
+      try {
+        const latestSQ = loadLatestSignalQualityScore();
+        if (latestSQ) {
+          const integrityHistory = loadMarketDataIntegrityHistory();
+          const latestIntegrity = integrityHistory[0] ?? null;
+          const candidate = buildCandidateFromSnapshot({
+            signalRecord: latestSQ,
+            integrityReport: latestIntegrity,
+            symbol: lastSymbol ?? "BTCUSDT",
+            source: "AUTO_CYCLE",
+          });
+          if (candidate) {
+            addOrUpdateCandidate(candidate);
+          }
+        }
+      } catch {
+        // Candidate creation is best-effort; never block the tick
+      }
+    }
 
     return { ok: anySuccess, error: anySuccess ? undefined : lastError ?? "All fetches failed" };
   } catch (err) {

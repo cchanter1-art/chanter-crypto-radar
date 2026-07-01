@@ -62,6 +62,10 @@ import {
   normalizeAutoIntelligenceCycleState,
   type AutoIntelligenceCycleState,
 } from "@/lib/autoIntelligenceCycle";
+import {
+  normalizeCandidateReviewRecord,
+  type CandidateReviewRecord,
+} from "@/lib/candidateReviewQueue";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -106,6 +110,7 @@ export interface LocalDataBackup {
   signalQualityHistory: SignalQualityRecord[];
   marketDataIntegrityHistory: MarketDataIntegrityReport[];
   autoIntelligenceCycleState: AutoIntelligenceCycleState;
+  candidateReviewQueue: CandidateReviewRecord[];
   settings: AppSettings;
 }
 
@@ -126,6 +131,7 @@ export interface ImportedLocalDataBackup {
   signalQualityHistory: SignalQualityRecord[];
   marketDataIntegrityHistory: MarketDataIntegrityReport[];
   autoIntelligenceCycleState: AutoIntelligenceCycleState;
+  candidateReviewQueue: CandidateReviewRecord[];
 }
 
 type ValidationResult<T> =
@@ -645,6 +651,7 @@ export function createLocalDataBackup(
     autoObservations: [],
     history: [],
   },
+  candidateReviewQueue: CandidateReviewRecord[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -729,6 +736,10 @@ export function createLocalDataBackup(
       autoObservations: [],
       history: [],
     },
+    candidateReviewQueue: candidateReviewQueue
+      .map(normalizeCandidateReviewRecord)
+      .filter((r): r is CandidateReviewRecord => r !== null)
+      .slice(0, 200),
     settings: { ...state.settings },
   };
 }
@@ -852,6 +863,14 @@ export function parseLocalDataBackup(
     return { ok: false, message: `Import failed. ${autoIntelligenceCycleState.message}` };
   }
 
+  // Validate candidate review queue (optional for backward compat)
+  const candidateReviewQueue: CandidateReviewRecord[] = Array.isArray(parsed.candidateReviewQueue)
+    ? parsed.candidateReviewQueue
+        .map(normalizeCandidateReviewRecord)
+        .filter((r): r is CandidateReviewRecord => r !== null)
+        .slice(0, 200)
+    : [];
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -881,6 +900,7 @@ export function parseLocalDataBackup(
       signalQualityHistory: signalQualityHistory.value,
       marketDataIntegrityHistory: marketDataIntegrityHistory.value,
       autoIntelligenceCycleState: autoIntelligenceCycleState.value,
+      candidateReviewQueue,
     },
   };
 }

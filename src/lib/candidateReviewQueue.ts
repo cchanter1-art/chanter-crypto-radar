@@ -74,12 +74,13 @@ function isStringArray(value: unknown): value is string[] {
  * Pure function - no side effects.
  */
 export function buildCandidateFromSnapshot(opts: {
-  signalRecord: SignalQualityRecord;
+  signalRecord: SignalQualityRecord | null;
   integrityReport: MarketDataIntegrityReport | null;
   symbol: string;
   source?: string;
 }): CandidateReviewRecord | null {
   const { signalRecord, integrityReport, symbol } = opts;
+  if (!signalRecord) return null;
   const source = opts.source ?? "AUTO_CYCLE";
   const now = new Date().toISOString();
 
