@@ -34,6 +34,11 @@ import {
   addOrUpdatePaperOutcome,
 } from "@/lib/paperOutcomeTracker";
 import {
+  loadPaperWatchSessions,
+  savePaperWatchSessions,
+  updatePaperWatchSessionFromCandle,
+} from "@/lib/paperWatchSession";
+import {
   loadSignalQualityHistory,
   saveSignalQualityHistory,
   createSignalQualityRecord,
@@ -672,6 +677,22 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       } catch {
         // Outcome updates are best-effort; never block the tick
       }
+    }
+
+    // === Paper Watch Sessions: update active sessions with latest candle ===
+    try {
+      const watchSessions = loadPaperWatchSessions();
+      if (watchSessions.length > 0) {
+        const updatedSessions = watchSessions.map((s) => {
+          const candles = candlesBySymbolMap.get(s.symbol);
+          if (!candles || candles.length === 0) return s;
+          const latest = candles[candles.length - 1];
+          return updatePaperWatchSessionFromCandle(s, { price: latest.close, time: latest.timestamp });
+        });
+        savePaperWatchSessions(updatedSessions);
+      }
+    } catch {
+      // Watch session updates are best-effort; never block the tick
     }
 
     return { ok: anySuccess, error: anySuccess ? undefined : lastError ?? "All fetches failed" };

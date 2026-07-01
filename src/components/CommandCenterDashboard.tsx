@@ -51,6 +51,11 @@ import {
   explainPaperActionPlan,
 } from "@/lib/paperActionPlan";
 import {
+  createPaperWatchSessionFromPlan,
+  addOrUpdatePaperWatchSession,
+  getActivePaperWatchSessions,
+} from "@/lib/paperWatchSession";
+import {
   buildDecisionDashboardSnapshot,
   getDecisionActionLabel,
 } from "@/lib/decisionDashboard";
@@ -302,6 +307,7 @@ function createLocalSnapshot() {
     candidateSummary: getCandidateSummary(),
     paperOutcomeSummary: buildPaperOutcomeSummary(loadPaperOutcomeHistory()),
     bestOutcomeSymbol: getBestOutcomeSymbol(loadPaperOutcomeHistory())?.symbol ?? null,
+    paperWatchSessions: getActivePaperWatchSessions(),
     paperActionPlan: (() => {
       const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
       const rankings = buildOpportunityRankings(candidates);
@@ -982,6 +988,76 @@ export default function CommandCenterDashboard() {
               <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
                 <p className="text-sm" style={{ color: "#6b7280" }}>No paper action plan yet.</p>
                 <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Run Auto Intelligence Cycle to generate a paper-only action plan preview.</p>
+              </div>
+            )}
+            <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+              <ShieldCheck className="mt-0.5 shrink-0" size={13} />
+              <p>No wallet connection. No real trades. Paper-only tracking. Not financial advice.</p>
+            </div>
+            {(() => {
+              if (!localSnapshot.paperActionPlan) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const session = createPaperWatchSessionFromPlan(localSnapshot.paperActionPlan);
+                      addOrUpdatePaperWatchSession(session);
+                      setLocalSnapshot(createLocalSnapshot());
+                    } catch {
+                      // best-effort
+                    }
+                  }}
+                  className="mt-3 w-full rounded-md px-3 py-2 text-xs font-medium transition-colors"
+                  style={{
+                    backgroundColor: "rgba(245, 158, 11, 0.08)",
+                    border: "1px solid rgba(245, 158, 11, 0.2)",
+                    color: "#f59e0b",
+                    cursor: "pointer",
+                  }}
+                >
+                  Save paper watch
+                </button>
+              );
+            })()}
+          </SectionCard>
+
+          <SectionCard
+            id="paper-watch-title"
+            title="Paper Watch Sessions"
+            subtitle={localSnapshot.paperWatchSessions.length > 0 ? localSnapshot.paperWatchSessions.length + " active -- " + localSnapshot.paperWatchSessions[0].symbol + " " + localSnapshot.paperWatchSessions[0].status : "Save a paper action plan to start watching a setup."}
+            icon={<Eye size={17} />}
+            badge={localSnapshot.paperWatchSessions.length > 0 ? localSnapshot.paperWatchSessions.length + " active" : "None"}
+          >
+            {localSnapshot.paperWatchSessions.length > 0 ? (
+              <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(201,215,227,0.05)" }}>
+                <table className="w-full min-w-[700px] border-collapse text-left">
+                  <thead style={{ backgroundColor: "#090d13" }}>
+                    <tr>
+                      {["Symbol", "Status", "Action", "Reference", "Current", "Setup", "Last checked"].map((h) => (
+                        <th key={h} className="px-3 py-3 label-upper" style={{ color: "#4b5563", fontSize: 9 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {localSnapshot.paperWatchSessions.map((s) => (
+                      <tr key={s.id} style={{ borderTop: "1px solid rgba(201,215,227,0.04)" }}>
+                        <td className="px-3 py-3 data-mono text-xs" style={{ color: "#9ca3af" }}>{s.symbol}</td>
+                        <td className="px-3 py-3 text-xs uppercase" style={{ color: s.status === "CONFIRMED" ? "#22c55e" : s.status === "INVALIDATED" || s.status === "EXPIRED" ? "#ef4444" : "#f59e0b" }}>{s.status}</td>
+                        <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{s.action}</td>
+                        <td className="px-3 py-3 data-mono text-xs" style={{ color: "#6b7280" }}>{s.referencePrice !== null ? s.referencePrice.toFixed(2) : "--"}</td>
+                        <td className="px-3 py-3 data-mono text-xs" style={{ color: "#6b7280" }}>{s.currentPrice !== null ? s.currentPrice.toFixed(2) : "--"}</td>
+                        <td className="px-3 py-3 text-[10px]" style={{ color: "#6b7280", maxWidth: 180 }}>{s.setupType}</td>
+                        <td className="px-3 py-3 text-[10px]" style={{ color: "#4b5563" }}>{s.lastCheckedAt ? new Date(s.lastCheckedAt).toLocaleTimeString() : "--"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
+                <p className="text-sm" style={{ color: "#6b7280" }}>No paper watch sessions yet.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Save a paper action plan to start watching a setup.</p>
               </div>
             )}
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>

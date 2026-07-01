@@ -71,6 +71,11 @@ import {
   MAX_PAPER_OUTCOME_RECORDS,
   type PaperOutcomeRecord,
 } from "@/lib/paperOutcomeTracker";
+import {
+  normalizePaperWatchSession,
+  MAX_PAPER_WATCH_SESSIONS,
+  type PaperWatchSession,
+} from "@/lib/paperWatchSession";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -117,6 +122,7 @@ export interface LocalDataBackup {
   autoIntelligenceCycleState: AutoIntelligenceCycleState;
   candidateReviewQueue: CandidateReviewRecord[];
   paperOutcomeHistory: PaperOutcomeRecord[];
+  paperWatchSessions: PaperWatchSession[];
   settings: AppSettings;
 }
 
@@ -139,6 +145,7 @@ export interface ImportedLocalDataBackup {
   autoIntelligenceCycleState: AutoIntelligenceCycleState;
   candidateReviewQueue: CandidateReviewRecord[];
   paperOutcomeHistory: PaperOutcomeRecord[];
+  paperWatchSessions: PaperWatchSession[];
 }
 
 type ValidationResult<T> =
@@ -674,6 +681,7 @@ export function createLocalDataBackup(
   },
   candidateReviewQueue: CandidateReviewRecord[] = [],
   paperOutcomeHistory: PaperOutcomeRecord[] = [],
+  paperWatchSessions: PaperWatchSession[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -773,6 +781,10 @@ export function createLocalDataBackup(
       .map(normalizePaperOutcomeRecord)
       .filter((r): r is PaperOutcomeRecord => r !== null)
       .slice(0, MAX_PAPER_OUTCOME_RECORDS),
+    paperWatchSessions: paperWatchSessions
+      .map(normalizePaperWatchSession)
+      .filter((r): r is PaperWatchSession => r !== null)
+      .slice(0, MAX_PAPER_WATCH_SESSIONS),
     settings: { ...state.settings },
   };
 }
@@ -912,6 +924,14 @@ export function parseLocalDataBackup(
         .slice(0, MAX_PAPER_OUTCOME_RECORDS)
     : [];
 
+  // Validate paper watch sessions (optional for backward compat)
+  const paperWatchSessions: PaperWatchSession[] = Array.isArray(parsed.paperWatchSessions)
+    ? parsed.paperWatchSessions
+        .map(normalizePaperWatchSession)
+        .filter((r): r is PaperWatchSession => r !== null)
+        .slice(0, MAX_PAPER_WATCH_SESSIONS)
+    : [];
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -943,6 +963,7 @@ export function parseLocalDataBackup(
       autoIntelligenceCycleState: autoIntelligenceCycleState.value,
       candidateReviewQueue,
       paperOutcomeHistory,
+      paperWatchSessions,
     },
   };
 }
