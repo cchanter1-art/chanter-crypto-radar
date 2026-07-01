@@ -48,7 +48,6 @@ import { buildOpportunityRankings } from "@/lib/opportunityRanking";
 import {
   buildDecisionDashboardSnapshot,
   getDecisionActionLabel,
-  getDecisionProofSummary,
 } from "@/lib/decisionDashboard";
 import {
   loadPaperOutcomeHistory,
@@ -912,9 +911,9 @@ export default function CommandCenterDashboard() {
 <SectionCard
             id="primary-decision-title"
             title="Primary Decision"
-            subtitle={localSnapshot.primaryDecision ? localSnapshot.primaryDecision.symbol + " -- " + getDecisionActionLabel(localSnapshot.primaryDecision.action) : "No decision yet. Run Auto Intelligence Cycle."}
+            subtitle={localSnapshot.primaryDecision ? localSnapshot.primaryDecision.symbol + ": " + getDecisionActionLabel(localSnapshot.primaryDecision.action) + " (" + localSnapshot.primaryDecision.confidenceLabel + " confidence)" : "No decision yet. Start the Auto Intelligence Cycle."}
             icon={<Crosshair size={17} />}
-            badge={localSnapshot.primaryDecision ? localSnapshot.primaryDecision.confidenceLabel : "Empty"}
+            badge={localSnapshot.primaryDecision ? localSnapshot.primaryDecision.confidenceLabel + " confidence" : "No data"}
           >
             {localSnapshot.primaryDecision ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -935,33 +934,33 @@ export default function CommandCenterDashboard() {
                 />
                 <Metric
                   label="Score"
-                  value={String(localSnapshot.primaryDecision.finalScore)}
-                  detail={getDecisionProofSummary(localSnapshot.primaryDecision)}
+                  value={String(localSnapshot.primaryDecision.finalScore) + "/100"}
+                  detail="Final quality score"
                 />
                 <Metric
-                  label="Risks"
-                  value={String(localSnapshot.primaryDecision.riskBullets.length)}
-                  detail={localSnapshot.primaryDecision.missingDataBullets.length + " missing"}
+                  label="Risk factors"
+                  value={localSnapshot.primaryDecision.riskBullets.length === 0 ? "None" : String(localSnapshot.primaryDecision.riskBullets.length)}
+                  detail={localSnapshot.primaryDecision.missingDataBullets.length === 0 ? "No gaps" : localSnapshot.primaryDecision.missingDataBullets.length + " data gaps"}
                 />
               </div>
             ) : (
               <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
                 <p className="text-sm" style={{ color: "#6b7280" }}>No decision yet.</p>
-                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Run the Auto Intelligence Cycle to generate candidates.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Start the Auto Intelligence Cycle to generate evidence-scored candidates.</p>
               </div>
             )}
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
-              <p>Review-only. No execution. Not financial advice.</p>
+              <p>Review-only. No trades. No orders. Not financial advice.</p>
             </div>
           </SectionCard>
 
           <SectionCard
             id="top-opportunity-title"
             title="Top Opportunity"
-            subtitle={localSnapshot.topOpportunity ? localSnapshot.topOpportunity.symbol + " -- " + localSnapshot.topOpportunity.action : "No ranked opportunity yet."}
+            subtitle={localSnapshot.topOpportunity ? localSnapshot.topOpportunity.symbol + " ranked #" + localSnapshot.topOpportunity.rankScore + " (" + localSnapshot.topOpportunity.action + ")" : "No ranked opportunity yet."}
             icon={<Trophy size={17} />}
-            badge={localSnapshot.topOpportunity ? "Score " + localSnapshot.topOpportunity.rankScore : "Empty"}
+            badge={localSnapshot.topOpportunity ? "Rank " + localSnapshot.topOpportunity.rankScore : "No data"}
           >
             {localSnapshot.topOpportunity ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -981,34 +980,34 @@ export default function CommandCenterDashboard() {
                   detail={`Final: ${localSnapshot.topOpportunity.finalScore}`}
                 />
                 <Metric
-                  label="Risk"
-                  value={localSnapshot.topOpportunity.riskStatus}
-                  detail={`Integrity: ${localSnapshot.topOpportunity.integrityScore}/100`}
+                  label="Risk status"
+                  value={localSnapshot.topOpportunity.riskStatus === "APPROVED" ? "Clear" : localSnapshot.topOpportunity.riskStatus === "BLOCKED" ? "Blocked" : localSnapshot.topOpportunity.riskStatus}
+                  detail={`Data integrity: ${localSnapshot.topOpportunity.integrityScore}/100`}
                 />
                 <Metric
                   label="Evidence"
-                  value={localSnapshot.topOpportunity.evidenceCompleteness}
-                  detail={localSnapshot.topOpportunity.missingFactors.length + " missing"}
+                  value={localSnapshot.topOpportunity.evidenceCompleteness === "complete" ? "Complete" : localSnapshot.topOpportunity.evidenceCompleteness === "partial" ? "Partial" : "Missing"}
+                  detail={localSnapshot.topOpportunity.missingFactors.length === 0 ? "All sources available" : localSnapshot.topOpportunity.missingFactors.length + " source(s) missing"}
                 />
               </div>
             ) : (
               <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
                 <p className="text-sm" style={{ color: "#6b7280" }}>No ranked opportunity yet.</p>
-                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Start the Auto Intelligence Cycle to generate opportunities.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Start the Auto Intelligence Cycle to generate ranked opportunities.</p>
               </div>
             )}
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
-              <p>Review-only. No orders. No paper positions. Not financial advice.</p>
+              <p>Review-only. No trades. No orders. Not financial advice.</p>
             </div>
           </SectionCard>
 
           <SectionCard
             id="paper-outcome-title"
             title="Paper Outcome Proof"
-            subtitle={localSnapshot.paperOutcomeSummary.total > 0 ? localSnapshot.paperOutcomeSummary.total + " tracked -- " + (localSnapshot.paperOutcomeSummary.measurable > 0 ? localSnapshot.paperOutcomeSummary.winRate.toFixed(0) + "% win" : "no measurable") + (localSnapshot.bestOutcomeSymbol ? " -- best: " + localSnapshot.bestOutcomeSymbol : "") : "No outcome proof yet."}
+            subtitle={localSnapshot.paperOutcomeSummary.total > 0 ? localSnapshot.paperOutcomeSummary.measurable + " resolved -- " + (localSnapshot.paperOutcomeSummary.measurable > 0 ? localSnapshot.paperOutcomeSummary.winRate.toFixed(0) + "% favorable" : "awaiting maturation") + (localSnapshot.bestOutcomeSymbol ? " -- best: " + localSnapshot.bestOutcomeSymbol : "") : "No outcome proof yet. Outcomes appear after candidates mature."}
             icon={<Activity size={17} />}
-            badge={localSnapshot.paperOutcomeSummary.total > 0 ? String(localSnapshot.paperOutcomeSummary.pending) + " pending" : "Empty"}
+            badge={localSnapshot.paperOutcomeSummary.total > 0 ? localSnapshot.paperOutcomeSummary.pending + " pending" : "No data"}
           >
             {localSnapshot.paperOutcomeSummary.total > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
@@ -1035,7 +1034,7 @@ export default function CommandCenterDashboard() {
                 <Metric
                   label="Resolved"
                   value={String(localSnapshot.paperOutcomeSummary.measurable)}
-                  detail={localSnapshot.paperOutcomeSummary.pending + " pending"}
+                  detail="Win/loss/flat outcomes"
                 />
                 <Metric
                   label="Best symbol"
@@ -1046,12 +1045,12 @@ export default function CommandCenterDashboard() {
             ) : (
               <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
                 <p className="text-sm" style={{ color: "#6b7280" }}>No outcome proof yet.</p>
-                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Outcomes appear after candidates mature through horizons.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Outcomes appear after candidates mature through 15m, 1h, and 4h horizons.</p>
               </div>
             )}
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
-              <p>Proof only. No execution. Not financial advice.</p>
+              <p>Review-only. No trades. No orders. Not financial advice.</p>
             </div>
           </SectionCard>
 
@@ -1060,7 +1059,7 @@ export default function CommandCenterDashboard() {
             title="Candidate Review Queue"
             subtitle="Review-only intelligence candidates"
             icon={<ListChecks size={17} />}
-            badge={localSnapshot.candidateSummary.total > 0 ? localSnapshot.candidateSummary.review + " review" : "Empty"}
+            badge={localSnapshot.candidateSummary.total > 0 ? localSnapshot.candidateSummary.review + " to review" : "No candidates"}
           >
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
               <Metric
@@ -1096,7 +1095,7 @@ export default function CommandCenterDashboard() {
             </div>
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
-              <p>Review-only. No orders. No paper positions. Not financial advice.</p>
+              <p>Review-only. No trades. No orders. Not financial advice.</p>
             </div>
           </SectionCard>
 
