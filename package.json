@@ -15,6 +15,7 @@
     "test:auto-intelligence-cycle": "node scripts/verify-auto-intelligence-cycle.mjs",
     "test:candidate-review-queue": "node scripts/verify-candidate-review-queue.mjs",
     "test:opportunity-ranking": "node scripts/verify-opportunity-ranking.mjs",
+    "test:paper-outcome-tracker": "node scripts/verify-paper-outcome-tracker.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

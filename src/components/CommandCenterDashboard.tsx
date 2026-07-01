@@ -44,6 +44,10 @@ import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive, getLatestAutoObservation } from "@/lib/autoIntelligenceCycle";
 import { getCandidateSummary } from "@/lib/candidateReviewQueue";
 import { buildOpportunityRankings } from "@/lib/opportunityRanking";
+import {
+  loadPaperOutcomeHistory,
+  buildPaperOutcomeSummary,
+} from "@/lib/paperOutcomeTracker";
 import { loadCandidateReviewQueue } from "@/lib/candidateReviewQueue";
 import {
   loadPaperRiskJournal,
@@ -284,6 +288,7 @@ function createLocalSnapshot() {
     futuresSettings: loadFuturesPaperSettings(),
     scenario: loadFuturesTestScenario(),
     candidateSummary: getCandidateSummary(),
+    paperOutcomeSummary: buildPaperOutcomeSummary(loadPaperOutcomeHistory()),
     topOpportunity: (() => {
       const candidates = loadCandidateReviewQueue();
       const rankings = buildOpportunityRankings(candidates);
@@ -919,6 +924,58 @@ export default function CommandCenterDashboard() {
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
               <p>Review-only. No orders. No paper positions. Not financial advice.</p>
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            id="paper-outcome-title"
+            title="Paper Outcome Proof"
+            subtitle={localSnapshot.paperOutcomeSummary.total > 0 ? localSnapshot.paperOutcomeSummary.total + " tracked -- " + (localSnapshot.paperOutcomeSummary.measurable > 0 ? localSnapshot.paperOutcomeSummary.winRate.toFixed(0) + "% win" : "no measurable") : "No outcome proof yet."}
+            icon={<Activity size={17} />}
+            badge={localSnapshot.paperOutcomeSummary.total > 0 ? String(localSnapshot.paperOutcomeSummary.pending) + " pending" : "Empty"}
+          >
+            {localSnapshot.paperOutcomeSummary.total > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+                <Metric
+                  label="Tracked"
+                  value={String(localSnapshot.paperOutcomeSummary.total)}
+                  detail={localSnapshot.paperOutcomeSummary.measurable + " measurable"}
+                />
+                <Metric
+                  label="Wins"
+                  value={String(localSnapshot.paperOutcomeSummary.wins)}
+                  detail={localSnapshot.paperOutcomeSummary.measurable > 0 ? localSnapshot.paperOutcomeSummary.winRate.toFixed(1) + "% rate" : "--"}
+                />
+                <Metric
+                  label="Losses"
+                  value={String(localSnapshot.paperOutcomeSummary.losses)}
+                  detail={localSnapshot.paperOutcomeSummary.flat + " flat"}
+                />
+                <Metric
+                  label="Pending"
+                  value={String(localSnapshot.paperOutcomeSummary.pending)}
+                  detail="Awaiting horizon"
+                />
+                <Metric
+                  label="Blocked/NA"
+                  value={String(localSnapshot.paperOutcomeSummary.blocked + localSnapshot.paperOutcomeSummary.noAction)}
+                  detail={localSnapshot.paperOutcomeSummary.unavailable + " unavailable"}
+                />
+                <Metric
+                  label="Avg move"
+                  value={localSnapshot.paperOutcomeSummary.avgChangePct !== null ? localSnapshot.paperOutcomeSummary.avgChangePct.toFixed(2) + "%" : "--"}
+                  detail="Across all tracked"
+                />
+              </div>
+            ) : (
+              <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
+                <p className="text-sm" style={{ color: "#6b7280" }}>No outcome proof yet.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Outcomes appear after candidates mature through horizons.</p>
+              </div>
+            )}
+            <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+              <ShieldCheck className="mt-0.5 shrink-0" size={13} />
+              <p>Proof only. No execution. Not financial advice.</p>
             </div>
           </SectionCard>
 
