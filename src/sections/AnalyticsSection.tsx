@@ -65,20 +65,20 @@ export default function AnalyticsSection() {
       <Suspense fallback={<LazyRouteFallback />}>
         <AutoIntelligenceCyclePanel />
       </Suspense>
-          <Suspense fallback={null}>
-            <DecisionDashboardPanel />
-          </Suspense>
-          <Suspense fallback={null}>
-            <OpportunityRankingPanel />
-          </Suspense>
-          <Suspense fallback={null}>
-            <PaperOutcomeTrackerPanel />
-          </Suspense>
-          <Suspense fallback={null}>
-            <CandidateReviewQueuePanel />
-          </Suspense>
+      <Suspense fallback={null}>
+        <DecisionDashboardPanel />
+      </Suspense>
+      <Suspense fallback={null}>
+        <OpportunityRankingPanel />
+      </Suspense>
+      <Suspense fallback={null}>
+        <PaperOutcomeTrackerPanel />
+      </Suspense>
+      <Suspense fallback={null}>
+        <CandidateReviewQueuePanel />
+      </Suspense>
 
-<MarketNotes className="mt-8" />
+      <MarketNotes className="mt-8" />
     </div>
   );
 }
