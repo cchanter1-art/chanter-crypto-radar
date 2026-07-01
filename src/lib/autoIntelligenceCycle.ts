@@ -27,6 +27,12 @@ import {
 } from "@/lib/candidateReviewQueue";
 import {
   loadSignalQualityHistory,
+  saveSignalQualityHistory,
+  createSignalQualityRecord,
+  buildSignalInputFromIntegrity,
+  buildEvidenceStack,
+  applyEvidenceModifier,
+  evaluateSignalQuality,
 } from "@/lib/signalQualityScore";
 
 export type AutoCycleStatus = "passed" | "failed" | "running";
@@ -350,6 +356,10 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
     let failCount = 0;
     let observationsCreated = 0;
     let observationsSkipped = 0;
+    let signalRecordsCreated = 0;
+    let signalRecordsSkipped = 0;
+    let candidatesCreated = 0;
+    let candidatesSkipped = 0;
     let currentAutoObservations = [...getAutoIntelligenceCycleState().autoObservations];
 
     for (const symbol of TRACKED_SYMBOLS) {
@@ -405,6 +415,49 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
         currentAutoObservations = [newObs, ...currentAutoObservations].slice(0, MAX_AUTO_OBSERVATIONS);
         observationsCreated += 1;
       }
+
+      // === Signal Quality Bridge: create record from integrity report ===
+      try {
+        const signalInput = buildSignalInputFromIntegrity(symbol, {
+          integrityScore: report.integrityScore,
+          source: report.source,
+          freshnessStatus: report.freshnessStatus,
+          readinessStatus: report.readinessStatus,
+          candleCount: report.candleCount,
+        });
+        if (signalInput) {
+          const stack = buildEvidenceStack({
+            integrity: {
+              integrityScore: report.integrityScore,
+              source: report.source,
+              freshnessStatus: report.freshnessStatus,
+              readinessStatus: report.readinessStatus,
+            },
+            autoObs: {
+              autoObservations: currentAutoObservations.filter((o) => o.symbol === symbol),
+              observationsCreated,
+              lastSymbol: symbol,
+              lastScore: report.integrityScore,
+            },
+            riskGate: { riskStatus: signalInput.riskStatus },
+          });
+          const evaluation = evaluateSignalQuality(signalInput);
+          const adjusted = applyEvidenceModifier(evaluation, stack);
+          const record = createSignalQualityRecord(signalInput, result.fetchedAt, { adjusted, stack });
+          if (record) {
+            const sqHistory = loadSignalQualityHistory();
+            const filtered = sqHistory.filter((r) => r.id !== record.id);
+            saveSignalQualityHistory([record, ...filtered]);
+            signalRecordsCreated += 1;
+          } else {
+            signalRecordsSkipped += 1;
+          }
+        } else {
+          signalRecordsSkipped += 1;
+        }
+      } catch {
+        signalRecordsSkipped += 1;
+      }
     }
 
     const completedAt = new Date().toISOString();
@@ -445,6 +498,10 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       symbolsFailed: failCount,
       observationsCreated,
       observationsSkipped,
+      signalRecordsCreated,
+      signalRecordsSkipped,
+      candidatesCreated,
+      candidatesSkipped,
       history: newHistory,
       autoObservations: currentAutoObservations,
     });
@@ -486,6 +543,9 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
           });
           if (candidate) {
             addOrUpdateCandidate(candidate);
+            candidatesCreated += 1;
+          } else {
+            candidatesSkipped += 1;
           }
         }
       } catch {
