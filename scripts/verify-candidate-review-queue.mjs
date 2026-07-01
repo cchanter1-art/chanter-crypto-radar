@@ -762,7 +762,359 @@ try {
     assert.equal(risk.maxPositionLoss, 7, "Risk controller maxPositionLoss must be unchanged");
   }
 
-    console.log(
+  // --- v2 Polish Tests (36-50) ---
+
+  // 36. Multi-symbol candidate creation (multiple symbols in one batch)
+  {
+    store.clear();
+    const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
+    for (const sym of symbols) {
+      const sr = makeSignalRecord({
+        createdAt: "2026-03-15T00:00:00.000Z",
+        evidenceSnapshot: {
+          adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+          stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: sym, autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+        },
+      });
+      sr.input.symbol = sym;
+      const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: sym, source: "AUTO_CYCLE" });
+      assert.ok(candidate, "Candidate must be created for " + sym);
+      cq.addOrUpdateCandidate(candidate);
+    }
+    const loaded = cq.loadCandidateReviewQueue();
+    assert.equal(loaded.length, 3, "Three separate candidates for three symbols");
+    const syms = loaded.map((r) => r.symbol).sort();
+    assert.deepEqual(syms, ["BTCUSDT", "ETHUSDT", "SOLUSDT"]);
+  }
+
+  // 37. Dedupe by symbol + timeframe + evidence snapshot timestamp
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-03-20T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const c1 = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(c1);
+    // Same symbol, same evidenceSnapshotAt -> dedup
+    const c2 = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(85, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(c2);
+    const loaded = cq.loadCandidateReviewQueue();
+    assert.equal(loaded.length, 1, "Same symbol + same evidenceSnapshotAt must dedup");
+  }
+
+  // 38. filterCandidates: ALL returns all
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-04-01T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" }));
+    const loaded = cq.loadCandidateReviewQueue();
+    const all = cq.filterCandidates(loaded, "ALL");
+    assert.equal(all.length, loaded.length, "ALL filter returns all records");
+  }
+
+  // 39. filterCandidates: REVIEW returns only REVIEW
+  {
+    store.clear();
+    const sr1 = makeSignalRecord({
+      createdAt: "2026-04-02T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: sr1, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" }));
+    const sr2 = makeSignalRecord({
+      createdAt: "2026-04-03T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 40, evidenceModifier: -5, finalScore: 35, label: "Poor", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 30, integritySource: "LOCAL_MOCK", integrityFreshness: "stale", integrityReadiness: "ready_with_warnings", hasAutoObservations: false, autoObsCount: 0, autoObsLatestSymbol: null, autoObsLatestScore: null, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "partial", positiveFactors: [], negativeFactors: ["low integrity"], missingFactors: [] },
+      },
+    });
+    cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: sr2, integrityReport: makeIntegrity(30, "stale", "ready_with_warnings"), symbol: "ETHUSDT" }));
+    const loaded = cq.loadCandidateReviewQueue();
+    const reviewOnly = cq.filterCandidates(loaded, "REVIEW");
+    assert.equal(reviewOnly.length, 1, "REVIEW filter returns only REVIEW candidates");
+    assert.equal(reviewOnly[0].candidateStatus, "REVIEW");
+    const blockedOnly = cq.filterCandidates(loaded, "BLOCKED");
+    assert.equal(blockedOnly.length, 1, "BLOCKED filter returns only BLOCKED candidates");
+    assert.equal(blockedOnly[0].candidateStatus, "BLOCKED");
+  }
+
+  // 40. sortCandidates: score-high sorts descending
+  {
+    store.clear();
+    const scores = [83, 68, 35, 90];
+    for (let i = 0; i < scores.length; i++) {
+      const sr = makeSignalRecord({
+        createdAt: new Date(2026, 4, 1 + i).toISOString(),
+        evidenceSnapshot: {
+          adjusted: { baseScore: scores[i], evidenceModifier: 0, finalScore: scores[i], label: "Watch", capsApplied: [], evidenceFactors: [] },
+          stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+        },
+      });
+      cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" }));
+    }
+    const loaded = cq.loadCandidateReviewQueue();
+    const highToLow = cq.sortCandidates(loaded, "score-high");
+    assert.ok(highToLow[0].finalScore >= highToLow[1].finalScore, "score-high: first >= second");
+    assert.ok(highToLow[1].finalScore >= highToLow[2].finalScore, "score-high: second >= third");
+    assert.ok(highToLow[2].finalScore >= highToLow[3].finalScore, "score-high: third >= fourth");
+    const lowToHigh = cq.sortCandidates(loaded, "score-low");
+    assert.ok(lowToHigh[0].finalScore <= lowToHigh[1].finalScore, "score-low: first <= second");
+  }
+
+  // 41. sortCandidates: status-priority sorts REVIEW before WATCH before BLOCKED
+  {
+    store.clear();
+    // Add WATCH (score 68)
+    const srW = makeSignalRecord({
+      createdAt: "2026-05-10T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 65, evidenceModifier: 3, finalScore: 68, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 70, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: false, autoObsCount: 0, autoObsLatestSymbol: null, autoObsLatestScore: null, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "partial", positiveFactors: [], negativeFactors: [], missingFactors: ["auto obs"] },
+      },
+    });
+    cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: srW, integrityReport: makeIntegrity(70, "current", "ready"), symbol: "ETHUSDT" }));
+    // Add REVIEW (score 83)
+    const srR = makeSignalRecord({
+      createdAt: "2026-05-11T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: srR, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" }));
+    // Add BLOCKED (score 35)
+    const srB = makeSignalRecord({
+      createdAt: "2026-05-12T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 40, evidenceModifier: -5, finalScore: 35, label: "Poor", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 30, integritySource: "LOCAL_MOCK", integrityFreshness: "stale", integrityReadiness: "ready_with_warnings", hasAutoObservations: false, autoObsCount: 0, autoObsLatestSymbol: null, autoObsLatestScore: null, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "partial", positiveFactors: [], negativeFactors: ["low integrity"], missingFactors: [] },
+      },
+    });
+    cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: srB, integrityReport: makeIntegrity(30, "stale", "ready_with_warnings"), symbol: "SOLUSDT" }));
+    const loaded = cq.loadCandidateReviewQueue();
+    const byPriority = cq.sortCandidates(loaded, "status-priority");
+    assert.equal(byPriority[0].candidateStatus, "REVIEW", "status-priority: REVIEW first");
+    assert.equal(byPriority[1].candidateStatus, "WATCH", "status-priority: WATCH second");
+    assert.equal(byPriority[2].candidateStatus, "BLOCKED", "status-priority: BLOCKED third");
+  }
+
+  // 42. Review notes persistence
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-06-01T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const loaded = cq.loadCandidateReviewQueue();
+    cq.markCandidateReviewed(loaded[0].id, "Strong setup, will monitor closely");
+    const reviewed = cq.loadCandidateReviewQueue();
+    assert.equal(reviewed[0].reviewNotes, "Strong setup, will monitor closely", "Review notes must persist");
+    assert.ok(reviewed[0].reviewedAt, "reviewedAt must be set");
+  }
+
+  // 43. Dismiss reason persistence
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-06-15T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const loaded = cq.loadCandidateReviewQueue();
+    cq.dismissCandidate(loaded[0].id, "Stale setup, market conditions changed");
+    const dismissed = cq.loadCandidateReviewQueue();
+    assert.equal(dismissed[0].candidateStatus, "DISMISSED");
+    assert.equal(dismissed[0].dismissReason, "Stale setup, market conditions changed", "Dismiss reason must persist");
+    assert.ok(dismissed[0].dismissedAt, "dismissedAt must be set");
+  }
+
+  // 44. Export includes candidate queue with dismissReason field
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-07-01T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const loaded = cq.loadCandidateReviewQueue();
+    cq.dismissCandidate(loaded[0].id, "Test reason");
+    const queue = cq.loadCandidateReviewQueue();
+    const backupApi = await server.ssrLoadModule("/src/lib/localDataBackup.ts");
+    const exported = backupApi.createLocalDataBackup({ watchlist: [], trades: [], alerts: [], settings: {} }, [], [], undefined, [], undefined, undefined, [], [], undefined, undefined, [], undefined, [], [], undefined, queue);
+    assert.ok(exported.candidateReviewQueue, "Export must include candidateReviewQueue");
+    assert.equal(exported.candidateReviewQueue.length, 1);
+    assert.equal(exported.candidateReviewQueue[0].dismissReason, "Test reason", "Exported record must have dismissReason");
+  }
+
+  // 45. Old backup without candidate queue still imports (compat recheck)
+  {
+    store.clear();
+    const backupApi = await server.ssrLoadModule("/src/lib/localDataBackup.ts");
+    const validBackup = {
+      version: backupApi.BACKUP_SCHEMA_VERSION,
+      app: backupApi.BACKUP_APP_NAME,
+      exportedAt: "2026-07-01T00:00:00.000Z",
+      watchlist: [], paperTrades: [], priceAlerts: [], paperSignals: [],
+      signalSensitivity: "Balanced", backtestRuns: [],
+      riskControllerSettings: riskApi.DEFAULT_PAPER_RISK_SETTINGS,
+      riskJournal: [],
+      futuresPaperSettings: futuresApi.DEFAULT_FUTURES_PAPER_SETTINGS,
+      futuresPaperPositions: [], futuresPaperHistory: [],
+      futuresStrategyProfile: "Manual",
+      futuresTestScenario: "Neutral / Current Mock",
+      futuresStrategyBacktests: [],
+      forwardTestData: { activeSession: null, completedSessions: [] },
+      signalQualityHistory: [], marketDataIntegrityHistory: [],
+      settings: { displayName: "", email: "", priceAlerts: true, autoRefresh: false },
+    };
+    const result = backupApi.parseLocalDataBackup(JSON.stringify(validBackup));
+    assert.ok(result.ok, "Old backup without candidateReviewQueue must import");
+    assert.ok(Array.isArray(result.value.candidateReviewQueue), "candidateReviewQueue must be array");
+    assert.equal(result.value.candidateReviewQueue.length, 0, "Must be empty array");
+  }
+
+  // 46. Malformed candidate record rejected safely
+  {
+    store.clear();
+    // Directly store malformed records in localStorage
+    const malformed = [
+      { id: "bad-1", createdAt: "not-a-date" },
+      { notEvenARecord: true },
+      null,
+      "string-not-object",
+      { id: "good-1", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", symbol: "BTCUSDT", timeframe: "15m", source: "AUTO_CYCLE", direction: "WAIT", candidateStatus: "WATCH", baseScore: 65, evidenceModifier: 0, finalScore: 65, evidenceCompleteness: "partial", evidencePositiveFactors: [], evidenceNegativeFactors: [], evidenceMissingFactors: [], evidenceCapsApplied: [], evidenceSnapshotAt: "2026-01-01T00:00:00.000Z", integrityScore: 70, integrityReadiness: "ready", latestCandleAt: "2026-01-01T00:00:00.000Z", riskStatus: "APPROVED", riskReason: "ok", reasonSummary: "test", reviewNotes: "", reviewedAt: null, dismissedAt: null, dismissReason: "" },
+    ];
+    store.set("chanter-candidate-review-queue", JSON.stringify(malformed));
+    const loaded = cq.loadCandidateReviewQueue();
+    assert.equal(loaded.length, 1, "Only 1 valid record out of 4 malformed");
+    assert.equal(loaded[0].id, "good-1");
+  }
+
+  // 47. No paper positions created by multi-symbol candidate operations
+  {
+    store.clear();
+    for (const sym of ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ADAUSDT", "AVAXUSDT"]) {
+      const sr = makeSignalRecord({
+        createdAt: "2026-08-01T00:00:00.000Z",
+        evidenceSnapshot: {
+          adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+          stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: sym, autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+        },
+      });
+      sr.input.symbol = sym;
+      const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: sym });
+      cq.addOrUpdateCandidate(candidate);
+    }
+    let hasPositionKey = false;
+    for (const key of store.keys()) {
+      if (key.includes("position")) hasPositionKey = true;
+    }
+    assert.ok(!hasPositionKey, "No position keys in localStorage from multi-symbol operations");
+  }
+
+  // 48. No paper trades created by candidate operations
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-09-01T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    cq.markCandidateReviewed(candidate.id, "notes");
+    cq.dismissCandidate(candidate.id, "reason");
+    let hasTradeKey = false;
+    for (const key of store.keys()) {
+      if (key.includes("trade") || key.includes("history")) hasTradeKey = true;
+    }
+    assert.ok(!hasTradeKey, "No trade/history keys from candidate operations");
+  }
+
+  // 49. No execution/order fields on v2 candidate records
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-10-01T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    cq.markCandidateReviewed(candidate.id, "test");
+    cq.dismissCandidate(candidate.id, "test");
+    const loaded = cq.loadCandidateReviewQueue();
+    const json = JSON.stringify(loaded[0]);
+    const forbidden = ["tradeId", "orderId", "positionId", "execution", "executed", "filled", "buy", "sell", "openPosition", "closePosition"];
+    for (const field of forbidden) {
+      assert.ok(!json.includes("\"" + field + "\""), "Candidate JSON must not contain: " + field);
+    }
+    // Verify dismissReason field exists
+    assert.ok("dismissReason" in loaded[0], "Candidate must have dismissReason field");
+  }
+
+  // 50. getLatestCandidatePerSymbol returns one per symbol
+  {
+    store.clear();
+    // Add two candidates for BTCUSDT with different timestamps
+    for (const date of ["2026-11-01T00:00:00.000Z", "2026-11-02T00:00:00.000Z"]) {
+      const sr = makeSignalRecord({
+        createdAt: date,
+        evidenceSnapshot: {
+          adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+          stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+        },
+      });
+      cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" }));
+    }
+    // Add one for ETHUSDT
+    const sr2 = makeSignalRecord({
+      createdAt: "2026-11-03T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 65, evidenceModifier: 3, finalScore: 68, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 70, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: false, autoObsCount: 0, autoObsLatestSymbol: null, autoObsLatestScore: null, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "partial", positiveFactors: [], negativeFactors: [], missingFactors: ["auto obs"] },
+      },
+    });
+    cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: sr2, integrityReport: makeIntegrity(70, "current", "ready"), symbol: "ETHUSDT" }));
+    const latest = cq.getLatestCandidatePerSymbol();
+    assert.equal(latest.length, 2, "One per symbol (BTCUSDT + ETHUSDT)");
+    const btcLatest = latest.find((r) => r.symbol === "BTCUSDT");
+    assert.ok(btcLatest, "Must have BTCUSDT latest");
+    // The latest BTCUSDT candidate should have the newer evidenceSnapshotAt
+    const ethLatest = latest.find((r) => r.symbol === "ETHUSDT");
+    assert.ok(ethLatest, "Must have ETHUSDT latest");
+  }
+
+      console.log(
     "Candidate Review Queue v1 verification passed: REVIEW/WATCH/BLOCKED/STALE status rules, " +
     "risk BLOCKED override, missing evidence guard, dedup update, cap at 200, " +
     "malformed safe, export includes queue, dismiss/reviewed/clear dismissed, " +
@@ -770,7 +1122,10 @@ try {
     "auto tick candidate creation, failed fetch no candidate, dedup preserves createdAt, " +
     "summary counts, mark reviewed, dismiss, clear dismissed, clear queue, " +
     "backup export includes queue, old backup compat, malformed import safe, " +
-    "no paper positions, no paper trades, no execution fields, risk controller untouched.",
+    "no paper positions, no paper trades, no execution fields, risk controller untouched, " +
+    "multi-symbol batch creation, dedup by symbol+timestamp, filter helpers, sort helpers, " +
+    "review notes persistence, dismiss reason persistence, malformed record rejection, " +
+    "latest-per-symbol helper.",
   );
 } finally {
   await server.close();

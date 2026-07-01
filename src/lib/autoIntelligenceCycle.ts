@@ -26,7 +26,7 @@ import {
   addOrUpdateCandidate,
 } from "@/lib/candidateReviewQueue";
 import {
-  loadLatestSignalQualityScore,
+  loadSignalQualityHistory,
 } from "@/lib/signalQualityScore";
 
 export type AutoCycleStatus = "passed" | "failed" | "running";
@@ -429,17 +429,39 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       autoObservations: currentAutoObservations,
     });
 
-    // Build candidate review records from latest evidence snapshot
+    // Build candidate review records from latest evidence snapshot (multi-symbol)
     if (anySuccess) {
       try {
-        const latestSQ = loadLatestSignalQualityScore();
-        if (latestSQ) {
-          const integrityHistory = loadMarketDataIntegrityHistory();
-          const latestIntegrity = integrityHistory[0] ?? null;
+        const sqHistory = loadSignalQualityHistory();
+        const integrityHistory = loadMarketDataIntegrityHistory();
+
+        // Group signal quality records by symbol (latest per symbol)
+        const sqBySymbol = new Map<string, typeof sqHistory[number]>();
+        for (const sq of sqHistory) {
+          const sym = sq.input.symbol;
+          const existing = sqBySymbol.get(sym);
+          if (!existing || sq.createdAt > existing.createdAt) {
+            sqBySymbol.set(sym, sq);
+          }
+        }
+
+        // Group integrity reports by symbol (latest per symbol)
+        const integrityBySymbol = new Map<string, typeof integrityHistory[number] | null>();
+        for (const ir of integrityHistory) {
+          const sym = ir.symbol;
+          const existing = integrityBySymbol.get(sym);
+          if (!existing || ir.createdAt > existing.createdAt) {
+            integrityBySymbol.set(sym, ir);
+          }
+        }
+
+        // Build candidates for each symbol that has signal quality evidence
+        for (const [sym, sq] of sqBySymbol) {
+          const integrity = integrityBySymbol.get(sym) ?? null;
           const candidate = buildCandidateFromSnapshot({
-            signalRecord: latestSQ,
-            integrityReport: latestIntegrity,
-            symbol: lastSymbol ?? "BTCUSDT",
+            signalRecord: sq,
+            integrityReport: integrity,
+            symbol: sym,
             source: "AUTO_CYCLE",
           });
           if (candidate) {

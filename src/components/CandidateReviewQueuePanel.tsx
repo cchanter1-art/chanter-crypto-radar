@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { CheckCircle, Eye, Trash2, XCircle, ListChecks } from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
+import { CheckCircle, Eye, Trash2, XCircle, ListChecks, Filter, ArrowUpDown } from "lucide-react";
 import {
   loadCandidateReviewQueue,
   markCandidateReviewed,
@@ -7,8 +7,12 @@ import {
   clearDismissedCandidates,
   clearCandidateReviewQueue,
   getCandidateSummary,
+  filterCandidates,
+  sortCandidates,
   type CandidateReviewRecord,
   type CandidateStatus,
+  type CandidateFilter,
+  type CandidateSort,
 } from "@/lib/candidateReviewQueue";
 
 function statusColor(status: CandidateStatus): string {
@@ -31,37 +35,64 @@ function formatTimestamp(value: string | null): string {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+const FILTER_OPTIONS: CandidateFilter[] = ["ALL", "REVIEW", "WATCH", "STALE", "BLOCKED", "DISMISSED"];
+const SORT_OPTIONS: { value: CandidateSort; label: string }[] = [
+  { value: "newest", label: "Newest first" },
+  { value: "score-high", label: "Score: high to low" },
+  { value: "score-low", label: "Score: low to high" },
+  { value: "status-priority", label: "Status priority" },
+];
+
 export default function CandidateReviewQueuePanel() {
   const [records, setRecords] = useState<CandidateReviewRecord[]>(loadCandidateReviewQueue);
-  const [reviewNotes] = useState<Record<string, string>>({});
+  const [filter, setFilter] = useState<CandidateFilter>("ALL");
+  const [sort, setSort] = useState<CandidateSort>("newest");
+  const [reviewNotesMap, setReviewNotesMap] = useState<Record<string, string>>({});
+  const [dismissReasonMap, setDismissReasonMap] = useState<Record<string, string>>({});
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
 
-  const summary = getCandidateSummary();
-  const activeRecords = records.filter((r) => r.candidateStatus !== "DISMISSED");
+  const summary = useMemo(() => getCandidateSummary(), []);
 
-  const refresh = () => setRecords(loadCandidateReviewQueue());
+  const filteredSorted = useMemo(() => {
+    const filtered = filterCandidates(records, filter);
+    return sortCandidates(filtered, sort);
+  }, [records, filter, sort]);
 
-  const handleMarkReviewed = (id: string) => {
-    const notes = reviewNotes[id] ?? "";
+  const refresh = useCallback(() => setRecords(loadCandidateReviewQueue()), []);
+
+  const handleMarkReviewed = useCallback((id: string) => {
+    const notes = reviewNotesMap[id] ?? "";
     markCandidateReviewed(id, notes);
+    setActiveNoteId(null);
     refresh();
-  };
+  }, [reviewNotesMap, refresh]);
 
-  const handleDismiss = (id: string) => {
-    dismissCandidate(id);
+  const handleDismiss = useCallback((id: string) => {
+    const reason = dismissReasonMap[id] ?? "";
+    dismissCandidate(id, reason);
+    setActiveNoteId(null);
     refresh();
-  };
+  }, [dismissReasonMap, refresh]);
 
-  const handleClearDismissed = () => {
+  const handleClearDismissed = useCallback(() => {
     if (!window.confirm("Clear all dismissed candidates from the queue?")) return;
     clearDismissedCandidates();
     refresh();
-  };
+  }, [refresh]);
 
-  const handleClearQueue = () => {
+  const handleClearQueue = useCallback(() => {
     if (!window.confirm("Clear all candidate review records? This cannot be undone.")) return;
     clearCandidateReviewQueue();
     refresh();
-  };
+  }, [refresh]);
+
+  const filterCounts = useMemo(() => {
+    const counts: Record<CandidateFilter, number> = { ALL: records.length, REVIEW: 0, WATCH: 0, STALE: 0, BLOCKED: 0, DISMISSED: 0 };
+    for (const r of records) {
+      counts[r.candidateStatus]++;
+    }
+    return counts;
+  }, [records]);
 
   return (
     <section
@@ -85,7 +116,7 @@ export default function CandidateReviewQueuePanel() {
           className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.08em]"
           style={{ color: "#cc9258", border: "1px solid rgba(204,146,88,0.24)" }}
         >
-          Review-only -- paper only
+          Review-only -- no execution
         </span>
       </div>
 
@@ -94,11 +125,12 @@ export default function CandidateReviewQueuePanel() {
         style={{ backgroundColor: "rgba(201,215,227,0.02)", border: "1px solid rgba(201,215,227,0.05)" }}
       >
         <p className="text-xs" style={{ color: "#9ca3af" }}>Review-only candidate queue. No orders. No paper positions. Not financial advice.</p>
-        <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>Candidates are generated from evidence-scored signal quality snapshots.</p>
+        <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>Candidates are generated from evidence-scored signal quality snapshots across tracked symbols.</p>
         <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>No buy, sell, execute, or open-position actions are available.</p>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+      {/* Summary cards */}
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-lg p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
           <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Total</p>
           <p className="data-mono mt-1 text-lg" style={{ color: "#c9d7e3" }}>{summary.total}</p>
@@ -125,6 +157,7 @@ export default function CandidateReviewQueuePanel() {
         </div>
       </div>
 
+      {/* Latest candidate */}
       {summary.latestSymbol && (
         <div className="mt-3 rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -137,8 +170,44 @@ export default function CandidateReviewQueuePanel() {
         </div>
       )}
 
-      {activeRecords.length > 0 ? (
-        <div className="mt-5 overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(201,215,227,0.05)" }}>
+      {/* Filters + Sort */}
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <Filter size={12} style={{ color: "#4b5563" }} />
+          {FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => setFilter(opt)}
+              className="rounded px-2 py-0.5 text-[10px] uppercase tracking-[0.04em] transition-colors"
+              style={{
+                color: filter === opt ? "#cc9258" : "#4b5563",
+                border: filter === opt ? "1px solid rgba(204,146,88,0.3)" : "1px solid transparent",
+                background: filter === opt ? "rgba(204,146,88,0.06)" : "transparent",
+              }}
+            >
+              {opt} ({filterCounts[opt]})
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-1.5">
+          <ArrowUpDown size={12} style={{ color: "#4b5563" }} />
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as CandidateSort)}
+            className="rounded border-0 bg-transparent text-[10px] uppercase tracking-[0.04em] outline-none"
+            style={{ color: "#9ca3af", background: "rgba(0,0,0,0.14)" }}
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value} style={{ color: "#c9d7e3", background: "#0a0e14" }}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Table */}
+      {filteredSorted.length > 0 ? (
+        <div className="mt-4 overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(201,215,227,0.05)" }}>
           <table className="w-full min-w-[900px] border-collapse text-left">
             <thead style={{ backgroundColor: "#090d13" }}>
               <tr>
@@ -148,7 +217,7 @@ export default function CandidateReviewQueuePanel() {
               </tr>
             </thead>
             <tbody>
-              {activeRecords.map((record) => (
+              {filteredSorted.map((record) => (
                 <tr key={record.id} style={{ borderTop: "1px solid rgba(201,215,227,0.04)" }}>
                   <td className="px-3 py-3 data-mono text-xs" style={{ color: "#9ca3af" }}>{record.symbol}</td>
                   <td className="px-3 py-3 text-xs uppercase" style={{ color: statusColor(record.candidateStatus) }}>{record.candidateStatus}</td>
@@ -161,6 +230,14 @@ export default function CandidateReviewQueuePanel() {
                   <td className="px-3 py-3 text-[10px]" style={{ color: "#6b7280", maxWidth: 200 }}>{record.reasonSummary}</td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setActiveNoteId(activeNoteId === record.id ? null : record.id)}
+                        className="rounded p-1 transition-colors hover:bg-white/[0.06]"
+                        title="Review / dismiss with notes"
+                      >
+                        <Eye size={13} style={{ color: activeNoteId === record.id ? "#cc9258" : "#4b5563" }} />
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleMarkReviewed(record.id)}
@@ -184,6 +261,9 @@ export default function CandidateReviewQueuePanel() {
                     {record.reviewNotes && (
                       <p className="text-[9px]" style={{ color: "#6b7280" }}>{record.reviewNotes}</p>
                     )}
+                    {record.dismissReason && (
+                      <p className="text-[9px]" style={{ color: "#6b7280" }}>Dismissed: {record.dismissReason}</p>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -193,11 +273,73 @@ export default function CandidateReviewQueuePanel() {
       ) : (
         <div className="mt-6 rounded-lg p-7 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
           <Eye size={16} className="mx-auto mb-2" style={{ color: "#4b5563" }} />
-          <p className="text-sm" style={{ color: "#9ca3af" }}>No active review candidates.</p>
-          <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Start the Auto Intelligence Cycle to generate evidence-scored candidates.</p>
+          <p className="text-sm" style={{ color: "#9ca3af" }}>
+            {filter === "ALL" ? "No candidates in the queue." : `No ${filter} candidates.`}
+          </p>
+          <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>
+            {filter === "ALL" ? "Start the Auto Intelligence Cycle to generate evidence-scored candidates." : "Try a different filter."}
+          </p>
         </div>
       )}
 
+      {/* Notes panel for selected candidate */}
+      {activeNoteId && (
+        <div className="mt-4 rounded-lg p-4" style={{ background: "rgba(0,0,0,0.14)", border: "1px solid rgba(201,215,227,0.06)" }}>
+          {(() => {
+            const record = records.find((r) => r.id === activeNoteId);
+            if (!record) return null;
+            return (
+              <div>
+                <p className="mb-2 text-xs font-medium" style={{ color: "#9ca3af" }}>
+                  {record.symbol} -- Score: {record.finalScore} -- Status: {record.candidateStatus}
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Review notes</label>
+                    <textarea
+                      value={reviewNotesMap[activeNoteId] ?? ""}
+                      onChange={(e) => setReviewNotesMap((prev) => ({ ...prev, [activeNoteId]: e.target.value }))}
+                      placeholder="Add review notes (optional)..."
+                      rows={2}
+                      className="w-full rounded border-0 p-2 text-xs outline-none"
+                      style={{ background: "rgba(0,0,0,0.2)", color: "#c9d7e3", resize: "none" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleMarkReviewed(activeNoteId)}
+                      className="mt-1.5 rounded px-2.5 py-1 text-[10px] uppercase tracking-[0.04em] transition-colors"
+                      style={{ color: "#22c55e", border: "1px solid rgba(34,197,94,0.24)" }}
+                    >
+                      Mark reviewed
+                    </button>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Dismiss reason</label>
+                    <textarea
+                      value={dismissReasonMap[activeNoteId] ?? ""}
+                      onChange={(e) => setDismissReasonMap((prev) => ({ ...prev, [activeNoteId]: e.target.value }))}
+                      placeholder="Add dismiss reason (optional)..."
+                      rows={2}
+                      className="w-full rounded border-0 p-2 text-xs outline-none"
+                      style={{ background: "rgba(0,0,0,0.2)", color: "#c9d7e3", resize: "none" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleDismiss(activeNoteId)}
+                      className="mt-1.5 rounded px-2.5 py-1 text-[10px] uppercase tracking-[0.04em] transition-colors"
+                      style={{ color: "#ef4444", border: "1px solid rgba(239,68,68,0.24)" }}
+                    >
+                      Dismiss candidate
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Actions */}
       <div className="mt-5 flex flex-wrap gap-3">
         <button type="button" onClick={handleClearDismissed} className="btn-primary flex items-center gap-2" disabled={summary.dismissed === 0}>
           <Trash2 size={13} /> Clear dismissed

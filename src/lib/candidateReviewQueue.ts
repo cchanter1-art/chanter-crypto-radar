@@ -44,6 +44,7 @@ export interface CandidateReviewRecord {
   reviewNotes: string;
   reviewedAt: string | null;
   dismissedAt: string | null;
+  dismissReason: string;
 }
 
 export const CANDIDATE_REVIEW_STORAGE_KEY = "chanter-candidate-review-queue";
@@ -160,6 +161,7 @@ export function buildCandidateFromSnapshot(opts: {
     reviewNotes: "",
     reviewedAt: null,
     dismissedAt: null,
+    dismissReason: "",
   };
 }
 
@@ -193,6 +195,7 @@ export function normalizeCandidateReviewRecord(value: unknown): CandidateReviewR
   if (typeof r.reviewNotes !== "string") return null;
   if (r.reviewedAt !== null && !isValidDateString(r.reviewedAt)) return null;
   if (r.dismissedAt !== null && !isValidDateString(r.dismissedAt)) return null;
+  if (typeof r.dismissReason !== "string") return null;
 
   return {
     id: r.id,
@@ -221,6 +224,7 @@ export function normalizeCandidateReviewRecord(value: unknown): CandidateReviewR
     reviewNotes: r.reviewNotes as string,
     reviewedAt: r.reviewedAt as string | null,
     dismissedAt: r.dismissedAt as string | null,
+    dismissReason: r.dismissReason as string,
   };
 }
 
@@ -297,12 +301,12 @@ export function markCandidateReviewed(id: string, notes: string): CandidateRevie
   return next;
 }
 
-export function dismissCandidate(id: string): CandidateReviewRecord[] {
+export function dismissCandidate(id: string, reason: string = ""): CandidateReviewRecord[] {
   const existing = loadCandidateReviewQueue();
   const now = new Date().toISOString();
   const next = existing.map((r) =>
     r.id === id
-      ? { ...r, dismissedAt: now, candidateStatus: "DISMISSED" as CandidateStatus, updatedAt: now }
+      ? { ...r, dismissedAt: now, candidateStatus: "DISMISSED" as CandidateStatus, updatedAt: now, dismissReason: reason }
       : r,
   );
   saveCandidateReviewQueue(next);
@@ -323,6 +327,49 @@ export function clearCandidateReviewQueue(): boolean {
   } catch {
     return false;
   }
+}
+
+export function getLatestCandidatePerSymbol(): CandidateReviewRecord[] {
+  const records = loadCandidateReviewQueue();
+  const bySymbol = new Map<string, CandidateReviewRecord>();
+  for (const r of records) {
+    const existing = bySymbol.get(r.symbol);
+    if (!existing || r.updatedAt > existing.updatedAt) {
+      bySymbol.set(r.symbol, r);
+    }
+  }
+  return Array.from(bySymbol.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export type CandidateFilter = "ALL" | "REVIEW" | "WATCH" | "STALE" | "BLOCKED" | "DISMISSED";
+
+export function filterCandidates(records: CandidateReviewRecord[], filter: CandidateFilter): CandidateReviewRecord[] {
+  if (filter === "ALL") return records;
+  return records.filter((r) => r.candidateStatus === filter);
+}
+
+export type CandidateSort = "newest" | "score-high" | "score-low" | "status-priority";
+
+const STATUS_PRIORITY: Record<CandidateStatus, number> = {
+  REVIEW: 0,
+  WATCH: 1,
+  STALE: 2,
+  BLOCKED: 3,
+  DISMISSED: 4,
+};
+
+export function sortCandidates(records: CandidateReviewRecord[], sort: CandidateSort): CandidateReviewRecord[] {
+  const arr = [...records];
+  if (sort === "newest") {
+    arr.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  } else if (sort === "score-high") {
+    arr.sort((a, b) => b.finalScore - a.finalScore);
+  } else if (sort === "score-low") {
+    arr.sort((a, b) => a.finalScore - b.finalScore);
+  } else if (sort === "status-priority") {
+    arr.sort((a, b) => STATUS_PRIORITY[a.candidateStatus] - STATUS_PRIORITY[b.candidateStatus]);
+  }
+  return arr;
 }
 
 export function getCandidateSummary(): {

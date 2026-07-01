@@ -876,6 +876,11 @@ export default function CommandCenterDashboard() {
           >
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
               <Metric
+                label="Total active"
+                value={`${localSnapshot.candidateSummary.total - localSnapshot.candidateSummary.dismissed}`}
+                detail="All non-dismissed candidates"
+              />
+              <Metric
                 label="Review"
                 value={`${localSnapshot.candidateSummary.review}`}
                 detail="High-priority candidates"
@@ -886,14 +891,9 @@ export default function CommandCenterDashboard() {
                 detail="Moderate score candidates"
               />
               <Metric
-                label="Blocked"
-                value={`${localSnapshot.candidateSummary.blocked}`}
-                detail="Low score or risk-blocked"
-              />
-              <Metric
-                label="Stale"
-                value={`${localSnapshot.candidateSummary.stale}`}
-                detail="Data freshness issues"
+                label="Blocked / Stale"
+                value={`${localSnapshot.candidateSummary.blocked}/${localSnapshot.candidateSummary.stale}`}
+                detail="Risk-blocked / data stale"
               />
               <Metric
                 label="Latest symbol"
