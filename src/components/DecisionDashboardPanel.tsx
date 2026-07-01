@@ -1,18 +1,10 @@
-import { useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Crosshair, Eye, Clock, Ban, CheckCircle, AlertTriangle, XCircle, ShieldCheck } from "lucide-react";
 import {
   buildDecisionDashboardSnapshot,
+  loadDecisionDashboardInputs,
   type DecisionAction,
 } from "@/lib/decisionDashboard";
-import { loadCandidateReviewQueue } from "@/lib/candidateReviewQueue";
-import { buildOpportunityRankings } from "@/lib/opportunityRanking";
-import { loadSignalQualityHistory } from "@/lib/signalQualityScore";
-import { loadMarketDataIntegrityHistory } from "@/lib/marketDataIntegrity";
-import {
-  loadPaperOutcomeHistory,
-  buildPaperOutcomeSummary,
-  buildPaperOutcomeSymbolSummary,
-} from "@/lib/paperOutcomeTracker";
 
 function actionColor(action: DecisionAction): string {
   if (action === "REVIEW") return "#22c55e";
@@ -35,27 +27,40 @@ function confidenceColor(conf: string): string {
 }
 
 export default function DecisionDashboardPanel() {
-  const snapshot = useMemo(() => {
-    const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
-    const rankings = buildOpportunityRankings(candidates);
-    const sqHistory = loadSignalQualityHistory();
-    const latestSignal = sqHistory.length > 0 ? sqHistory[0] : null;
-    const integrityHistory = loadMarketDataIntegrityHistory();
-    const latestIntegrity = integrityHistory.length > 0 ? integrityHistory[0] : null;
-    const outcomes = loadPaperOutcomeHistory();
-    const outcomeSummary = outcomes.length > 0 ? buildPaperOutcomeSummary(outcomes) : null;
-    const outcomeSymbolSummaries = buildPaperOutcomeSymbolSummary(outcomes);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(() => new Date().toISOString());
 
-    return buildDecisionDashboardSnapshot({
-      candidates,
-      rankings,
-      latestSignalQuality: latestSignal,
-      latestIntegrity,
-      outcomeSummary,
-      outcomeSymbolSummaries,
-      cycleState: null,
-    });
+  const refresh = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+    setLastRefreshed(new Date().toISOString());
   }, []);
+
+  // Refresh on visibility/focus
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", handler);
+    window.addEventListener("focus", handler);
+    return () => {
+      document.removeEventListener("visibilitychange", handler);
+      window.removeEventListener("focus", handler);
+    };
+  }, [refresh]);
+
+  // Refresh on storage event from other tabs
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === "chanter-candidate-review-queue" || e.key === "chanter-paper-outcome-history" || e.key === "chanter-signal-quality-history" || e.key === "chanter-market-data-integrity-history") refresh();
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, [refresh]);
+
+  const snapshot = useMemo(() => {
+    void refreshKey;
+    return buildDecisionDashboardSnapshot(loadDecisionDashboardInputs());
+  }, [refreshKey]);
 
   const primary = snapshot.primary;
 
@@ -228,7 +233,9 @@ export default function DecisionDashboardPanel() {
         </div>
       )}
 
-      <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+      <p className="mt-3 text-[10px]" style={{ color: "#4b5563" }}>Last refreshed: {new Date(lastRefreshed).toLocaleTimeString()}</p>
+
+      <div className="mt-1 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
         <ShieldCheck className="mt-0.5 shrink-0" size={13} />
         <p>Review-only. No execution. No financial advice. Actions are WATCH, REVIEW, WAIT, or IGNORE only.</p>
       </div>

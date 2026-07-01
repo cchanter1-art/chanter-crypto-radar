@@ -53,6 +53,7 @@ import {
 import {
   loadPaperOutcomeHistory,
   buildPaperOutcomeSummary,
+  buildPaperOutcomeSymbolSummary,
   getBestOutcomeSymbol,
 } from "@/lib/paperOutcomeTracker";
 import { loadCandidateReviewQueue } from "@/lib/candidateReviewQueue";
@@ -300,13 +301,19 @@ function createLocalSnapshot() {
     primaryDecision: (() => {
       const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
       const rankings = buildOpportunityRankings(candidates);
+      const sqHistory = loadLatestSignalQualityScore() ? [loadLatestSignalQualityScore()] : [];
+      const latestSignal = sqHistory.length > 0 ? sqHistory[0] : null;
+      const latestIntegrity = loadLatestMarketDataIntegrity();
+      const outcomes = loadPaperOutcomeHistory();
+      const outcomeSummary = outcomes.length > 0 ? buildPaperOutcomeSummary(outcomes) : null;
+      const outcomeSymbolSummaries = buildPaperOutcomeSymbolSummary(outcomes);
       const snapshot = buildDecisionDashboardSnapshot({
         candidates,
         rankings,
-        latestSignalQuality: null,
-        latestIntegrity: null,
-        outcomeSummary: null,
-        outcomeSymbolSummaries: [],
+        latestSignalQuality: latestSignal,
+        latestIntegrity,
+        outcomeSummary,
+        outcomeSymbolSummaries,
         cycleState: null,
       });
       return snapshot.primary;

@@ -22,6 +22,15 @@ import type { SignalQualityRecord } from "@/lib/signalQualityScore";
 import type { MarketDataIntegrityReport } from "@/lib/marketDataIntegrity";
 import type { PaperOutcomeSummary, PaperOutcomeSymbolSummary } from "@/lib/paperOutcomeTracker";
 import type { AutoIntelligenceCycleState } from "@/lib/autoIntelligenceCycle";
+import { loadCandidateReviewQueue } from "@/lib/candidateReviewQueue";
+import { buildOpportunityRankings } from "@/lib/opportunityRanking";
+import { loadSignalQualityHistory } from "@/lib/signalQualityScore";
+import { loadMarketDataIntegrityHistory } from "@/lib/marketDataIntegrity";
+import {
+  loadPaperOutcomeHistory,
+  buildPaperOutcomeSummary,
+  buildPaperOutcomeSymbolSummary,
+} from "@/lib/paperOutcomeTracker";
 
 // === Types ===
 
@@ -349,4 +358,30 @@ export function getDecisionProofSummary(decision: DecisionRecord): string {
   if (decision.proofBullets.length === 0) return "No proof available yet.";
   const first = decision.proofBullets[0];
   return first;
+}
+
+// === Runtime loader ===
+
+export function loadDecisionDashboardInputs(): DecisionDashboardInput {
+  const candidates = loadCandidateReviewQueue().filter(
+    (c) => c.candidateStatus !== "DISMISSED",
+  );
+  const rankings = buildOpportunityRankings(candidates);
+  const sqHistory = loadSignalQualityHistory();
+  const latestSignalQuality = sqHistory.length > 0 ? sqHistory[0] : null;
+  const integrityHistory = loadMarketDataIntegrityHistory();
+  const latestIntegrity = integrityHistory.length > 0 ? integrityHistory[0] : null;
+  const outcomes = loadPaperOutcomeHistory();
+  const outcomeSummary = outcomes.length > 0 ? buildPaperOutcomeSummary(outcomes) : null;
+  const outcomeSymbolSummaries = buildPaperOutcomeSymbolSummary(outcomes);
+
+  return {
+    candidates,
+    rankings,
+    latestSignalQuality,
+    latestIntegrity,
+    outcomeSummary,
+    outcomeSymbolSummaries,
+    cycleState: null,
+  };
 }
