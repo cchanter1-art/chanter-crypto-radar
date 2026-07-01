@@ -55,6 +55,7 @@ import {
   addOrUpdatePaperWatchSession,
   getActivePaperWatchSessions,
 } from "@/lib/paperWatchSession";
+import { runPaperReplay, explainReplayResult } from "@/lib/paperReplayEngine";
 import {
   buildDecisionDashboardSnapshot,
   getDecisionActionLabel,
@@ -307,6 +308,7 @@ function createLocalSnapshot() {
     candidateSummary: getCandidateSummary(),
     paperOutcomeSummary: buildPaperOutcomeSummary(loadPaperOutcomeHistory()),
     bestOutcomeSymbol: getBestOutcomeSymbol(loadPaperOutcomeHistory())?.symbol ?? null,
+    replaySummary: (() => { try { return runPaperReplay().summary; } catch { return null; } })(),
     paperWatchSessions: getActivePaperWatchSessions(),
     paperActionPlan: (() => {
       const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
@@ -933,6 +935,49 @@ export default function CommandCenterDashboard() {
           </SectionCard>
 
 <SectionCard
+            id="replay-confidence-title"
+            title="Replay Confidence"
+            subtitle={localSnapshot.replaySummary ? localSnapshot.replaySummary.totalSteps + " decisions replayed -- " + (localSnapshot.replaySummary.measurableWinRate !== null ? localSnapshot.replaySummary.measurableWinRate.toFixed(0) + "% win rate" : "pending proof") : "No replay data yet"}
+            icon={<Activity size={17} />}
+            badge={localSnapshot.replaySummary?.confidenceLabel ?? "NO_DATA"}
+          >
+            {localSnapshot.replaySummary && localSnapshot.replaySummary.totalSteps > 0 ? (
+              <>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="rounded-md p-2" style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(201,215,227,0.04)" }}>
+                    <div className="label-upper" style={{ color: "#4b5563", fontSize: 9 }}>Decisions</div>
+                    <div className="mt-1 data-mono text-sm" style={{ color: "#9ca3af" }}>{localSnapshot.replaySummary.totalSteps}</div>
+                  </div>
+                  <div className="rounded-md p-2" style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(201,215,227,0.04)" }}>
+                    <div className="label-upper" style={{ color: "#4b5563", fontSize: 9 }}>Win Rate</div>
+                    <div className="mt-1 data-mono text-sm" style={{ color: localSnapshot.replaySummary.measurableWinRate !== null && localSnapshot.replaySummary.measurableWinRate >= 60 ? "#22c55e" : "#9ca3af" }}>{localSnapshot.replaySummary.measurableWinRate !== null ? localSnapshot.replaySummary.measurableWinRate.toFixed(0) + "%" : "--"}</div>
+                  </div>
+                  <div className="rounded-md p-2" style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(201,215,227,0.04)" }}>
+                    <div className="label-upper" style={{ color: "#4b5563", fontSize: 9 }}>Favorable</div>
+                    <div className="mt-1 data-mono text-sm" style={{ color: "#22c55e" }}>{localSnapshot.replaySummary.favorableCount}</div>
+                  </div>
+                  <div className="rounded-md p-2" style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(201,215,227,0.04)" }}>
+                    <div className="label-upper" style={{ color: "#4b5563", fontSize: 9 }}>Unfavorable</div>
+                    <div className="mt-1 data-mono text-sm" style={{ color: "#ef4444" }}>{localSnapshot.replaySummary.unfavorableCount}</div>
+                  </div>
+                </div>
+                <div className="mt-2 rounded-lg p-2 text-xs leading-5" style={{ backgroundColor: "rgba(245, 158, 11, 0.04)", border: "1px solid rgba(245, 158, 11, 0.08)" }}>
+                  <p style={{ color: "#9ca3af" }}>{explainReplayResult(localSnapshot.replaySummary)}</p>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
+                <p className="text-sm" style={{ color: "#6b7280" }}>No replay data available.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Run the Auto Intelligence Cycle to generate historical data for replay analysis.</p>
+              </div>
+            )}
+            <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+              <ShieldCheck className="mt-0.5 shrink-0" size={13} />
+              <p>No wallet connection. No real trades. Paper-only tracking. Not financial advice.</p>
+            </div>
+          </SectionCard>
+
+          <SectionCard
             id="paper-action-plan-title"
             title="Paper Action Plan"
             subtitle={localSnapshot.paperActionPlan ? localSnapshot.paperActionPlan.symbol + ": " + localSnapshot.paperActionPlan.setupType : "Run Auto Intelligence Cycle to generate a paper-only action plan preview."}

@@ -19,6 +19,7 @@
     "test:decision-dashboard": "node scripts/verify-decision-dashboard.mjs",
     "test:paper-action-plan": "node scripts/verify-paper-action-plan.mjs",
     "test:paper-watch-session": "node scripts/verify-paper-watch-session.mjs",
+    "test:paper-replay-engine": "node scripts/verify-paper-replay-engine.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

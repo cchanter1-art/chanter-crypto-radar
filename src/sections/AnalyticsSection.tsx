@@ -18,6 +18,7 @@ const CandidateReviewQueuePanel = lazy(() => import("@/components/CandidateRevie
 const OpportunityRankingPanel = lazy(() => import("@/components/OpportunityRankingPanel"));
 const PaperOutcomeTrackerPanel = lazy(() => import("@/components/PaperOutcomeTrackerPanel"));
 const DecisionDashboardPanel = lazy(() => import("@/components/DecisionDashboardPanel"));
+const PaperReplayPanel = lazy(() => import("@/components/PaperReplayPanel"));
 
 export default function AnalyticsSection() {
   return (
@@ -73,6 +74,9 @@ export default function AnalyticsSection() {
       </Suspense>
       <Suspense fallback={null}>
         <PaperOutcomeTrackerPanel />
+      </Suspense>
+      <Suspense fallback={null}>
+        <PaperReplayPanel />
       </Suspense>
       <Suspense fallback={null}>
         <CandidateReviewQueuePanel />
