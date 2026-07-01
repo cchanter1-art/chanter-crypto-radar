@@ -916,42 +916,64 @@ export default function CommandCenterDashboard() {
             badge={localSnapshot.primaryDecision ? localSnapshot.primaryDecision.confidenceLabel + " confidence" : "No data"}
           >
             {localSnapshot.primaryDecision ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
-                <Metric
-                  label="Symbol"
-                  value={localSnapshot.primaryDecision.symbol}
-                  detail={localSnapshot.primaryDecision.reasonTitle}
-                />
-                <Metric
-                  label="Action"
-                  value={localSnapshot.primaryDecision.action}
-                  detail={getDecisionActionLabel(localSnapshot.primaryDecision.action)}
-                />
-                <Metric
-                  label="Confidence"
-                  value={localSnapshot.primaryDecision.confidenceLabel}
-                  detail={`Priority: ${localSnapshot.primaryDecision.priorityScore}`}
-                />
-                <Metric
-                  label="Score"
-                  value={String(localSnapshot.primaryDecision.finalScore) + "/100"}
-                  detail="Final quality score"
-                />
-                <Metric
-                  label="Risk factors"
-                  value={localSnapshot.primaryDecision.riskBullets.length === 0 ? "None" : String(localSnapshot.primaryDecision.riskBullets.length)}
-                  detail={localSnapshot.primaryDecision.missingDataBullets.length === 0 ? "No gaps" : localSnapshot.primaryDecision.missingDataBullets.length + " data gaps"}
-                />
-              </div>
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+                  <Metric
+                    label="Symbol"
+                    value={localSnapshot.primaryDecision.symbol}
+                    detail={localSnapshot.primaryDecision.reasonTitle}
+                  />
+                  <Metric
+                    label="Action"
+                    value={localSnapshot.primaryDecision.action}
+                    detail={getDecisionActionLabel(localSnapshot.primaryDecision.action)}
+                  />
+                  <Metric
+                    label="Confidence"
+                    value={localSnapshot.primaryDecision.confidenceLabel}
+                    detail={`Priority: ${localSnapshot.primaryDecision.priorityScore}`}
+                  />
+                  <Metric
+                    label="Score"
+                    value={String(localSnapshot.primaryDecision.finalScore) + "/100"}
+                    detail="Final quality score"
+                  />
+                  <Metric
+                    label="Risk factors"
+                    value={localSnapshot.primaryDecision.riskBullets.length === 0 ? "None" : String(localSnapshot.primaryDecision.riskBullets.length)}
+                    detail={localSnapshot.primaryDecision.missingDataBullets.length === 0 ? "No gaps" : localSnapshot.primaryDecision.missingDataBullets.length + " data gaps"}
+                  />
+                </div>
+                <div className="mt-4 rounded-lg p-4" style={{ background: "rgba(0,0,0,0.10)", border: "1px solid rgba(201,215,227,0.04)" }}>
+                  <p className="mb-2 text-[10px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Decision Brief</p>
+                  <p className="text-sm leading-6" style={{ color: "#c9d7e3" }}>{localSnapshot.primaryDecision.reasonSummary}</p>
+                  {localSnapshot.primaryDecision.proofBullets.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Proof so far</p>
+                      {localSnapshot.primaryDecision.proofBullets.slice(0, 2).map((b, i) => (
+                        <p key={i} className="text-[11px] leading-5" style={{ color: "#9ca3af" }}>- {b}</p>
+                      ))}
+                    </div>
+                  )}
+                  {localSnapshot.primaryDecision.missingDataBullets.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Missing before stronger confidence</p>
+                      {localSnapshot.primaryDecision.missingDataBullets.slice(0, 3).map((b, i) => (
+                        <p key={i} className="text-[11px] leading-5" style={{ color: "#6b7280" }}>- {b}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
               <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
                 <p className="text-sm" style={{ color: "#6b7280" }}>No decision yet.</p>
-                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Start the Auto Intelligence Cycle to generate evidence-scored candidates.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Run Auto Intelligence Cycle to generate a ranked paper-only decision.</p>
               </div>
             )}
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
-              <p>Review-only. No trades. No orders. Not financial advice.</p>
+              <p>No wallet connection. No real trades. Paper-only tracking. Not financial advice.</p>
             </div>
           </SectionCard>
 
@@ -998,7 +1020,7 @@ export default function CommandCenterDashboard() {
             )}
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
-              <p>Review-only. No trades. No orders. Not financial advice.</p>
+              <p>No wallet connection. No real trades. Paper-only tracking. Not financial advice.</p>
             </div>
           </SectionCard>
 
@@ -1050,7 +1072,7 @@ export default function CommandCenterDashboard() {
             )}
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
-              <p>Review-only. No trades. No orders. Not financial advice.</p>
+              <p>No wallet connection. No real trades. Paper-only tracking. Not financial advice.</p>
             </div>
           </SectionCard>
 
@@ -1095,7 +1117,7 @@ export default function CommandCenterDashboard() {
             </div>
             <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
               <ShieldCheck className="mt-0.5 shrink-0" size={13} />
-              <p>Review-only. No trades. No orders. Not financial advice.</p>
+              <p>No wallet connection. No real trades. Paper-only tracking. Not financial advice.</p>
             </div>
           </SectionCard>
 
