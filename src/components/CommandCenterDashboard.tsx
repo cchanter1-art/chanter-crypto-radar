@@ -10,6 +10,7 @@ import {
   Gauge,
   History,
   Layers3,
+  Trophy,
   ListChecks,
   Radar,
   ShieldCheck,
@@ -42,6 +43,8 @@ import { loadLatestSignalQualityScore, buildEvidenceStack, applyEvidenceModifier
 import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive, getLatestAutoObservation } from "@/lib/autoIntelligenceCycle";
 import { getCandidateSummary } from "@/lib/candidateReviewQueue";
+import { buildOpportunityRankings } from "@/lib/opportunityRanking";
+import { loadCandidateReviewQueue } from "@/lib/candidateReviewQueue";
 import {
   loadPaperRiskJournal,
   loadPaperRiskSettings,
@@ -281,6 +284,11 @@ function createLocalSnapshot() {
     futuresSettings: loadFuturesPaperSettings(),
     scenario: loadFuturesTestScenario(),
     candidateSummary: getCandidateSummary(),
+    topOpportunity: (() => {
+      const candidates = loadCandidateReviewQueue();
+      const rankings = buildOpportunityRankings(candidates);
+      return rankings[0] ?? null;
+    })(),
     storage: getStorageHealth(),
     checkedAt: Date.now(),
   };
@@ -868,6 +876,53 @@ export default function CommandCenterDashboard() {
           </SectionCard>
 
 <SectionCard
+            id="top-opportunity-title"
+            title="Top Opportunity"
+            subtitle={localSnapshot.topOpportunity ? localSnapshot.topOpportunity.symbol + " -- " + localSnapshot.topOpportunity.action : "No ranked opportunity yet."}
+            icon={<Trophy size={17} />}
+            badge={localSnapshot.topOpportunity ? "Score " + localSnapshot.topOpportunity.rankScore : "Empty"}
+          >
+            {localSnapshot.topOpportunity ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+                <Metric
+                  label="Symbol"
+                  value={localSnapshot.topOpportunity.symbol}
+                  detail={localSnapshot.topOpportunity.timeframe + " " + localSnapshot.topOpportunity.direction}
+                />
+                <Metric
+                  label="Action"
+                  value={localSnapshot.topOpportunity.action}
+                  detail={localSnapshot.topOpportunity.reasonSummary}
+                />
+                <Metric
+                  label="Rank score"
+                  value={`${localSnapshot.topOpportunity.rankScore}`}
+                  detail={`Final: ${localSnapshot.topOpportunity.finalScore}`}
+                />
+                <Metric
+                  label="Risk"
+                  value={localSnapshot.topOpportunity.riskStatus}
+                  detail={`Integrity: ${localSnapshot.topOpportunity.integrityScore}/100`}
+                />
+                <Metric
+                  label="Evidence"
+                  value={localSnapshot.topOpportunity.evidenceCompleteness}
+                  detail={localSnapshot.topOpportunity.missingFactors.length + " missing"}
+                />
+              </div>
+            ) : (
+              <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
+                <p className="text-sm" style={{ color: "#6b7280" }}>No ranked opportunity yet.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Start the Auto Intelligence Cycle to generate opportunities.</p>
+              </div>
+            )}
+            <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+              <ShieldCheck className="mt-0.5 shrink-0" size={13} />
+              <p>Review-only. No orders. No paper positions. Not financial advice.</p>
+            </div>
+          </SectionCard>
+
+          <SectionCard
             id="candidate-queue-title"
             title="Candidate Review Queue"
             subtitle="Review-only intelligence candidates"

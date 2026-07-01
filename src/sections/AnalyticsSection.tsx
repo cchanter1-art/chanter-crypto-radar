@@ -15,6 +15,7 @@ const SignalQualityScorePanel = lazy(() => import("@/components/SignalQualitySco
 const MarketDataIntegrityPanel = lazy(() => import("@/components/MarketDataIntegrityPanel"));
 const AutoIntelligenceCyclePanel = lazy(() => import("@/components/AutoIntelligenceCyclePanel"));
 const CandidateReviewQueuePanel = lazy(() => import("@/components/CandidateReviewQueuePanel"));
+const OpportunityRankingPanel = lazy(() => import("@/components/OpportunityRankingPanel"));
 
 export default function AnalyticsSection() {
   return (
@@ -62,6 +63,9 @@ export default function AnalyticsSection() {
       <Suspense fallback={<LazyRouteFallback />}>
         <AutoIntelligenceCyclePanel />
       </Suspense>
+          <Suspense fallback={null}>
+            <OpportunityRankingPanel />
+          </Suspense>
           <Suspense fallback={null}>
             <CandidateReviewQueuePanel />
           </Suspense>
