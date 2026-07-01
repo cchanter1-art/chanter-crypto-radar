@@ -271,10 +271,7 @@ export function buildPaperOutcomeRecord(
   marketData: { price: number; time: string } | null,
   options?: OutcomeOptions,
 ): PaperOutcomeRecord {
-  const flatThresholdPct = options?.flatThresholdPct ?? DEFAULT_FLAT_THRESHOLD_PCT;
-  const horizon15mMs = options?.horizon15mMs ?? DEFAULT_HORIZON_15M_MS;
-  const horizon1hMs = options?.horizon1hMs ?? DEFAULT_HORIZON_1H_MS;
-  const horizon4hMs = options?.horizon4hMs ?? DEFAULT_HORIZON_4H_MS;
+  void options; // reserved for future threshold overrides
   const now = Date.now();
 
   const baselinePrice = marketData ? safeNumberOrNull(marketData.price) : null;
@@ -302,37 +299,17 @@ export function buildPaperOutcomeRecord(
     outcome1h = "NO_ACTION";
     outcome4h = "NO_ACTION";
   } else {
-    // Initially PENDING until market data arrives and time passes
-    outcome15m = computeOutcomeForHorizon(
-      candidate.direction,
-      baselinePrice,
-      baselinePrice,
-      baselineTime,
-      baselineTime,
-      now,
-      horizon15mMs,
-      flatThresholdPct,
-    );
-    outcome1h = computeOutcomeForHorizon(
-      candidate.direction,
-      baselinePrice,
-      baselinePrice,
-      baselineTime,
-      baselineTime,
-      now,
-      horizon1hMs,
-      flatThresholdPct,
-    );
-    outcome4h = computeOutcomeForHorizon(
-      candidate.direction,
-      baselinePrice,
-      baselinePrice,
-      baselineTime,
-      baselineTime,
-      now,
-      horizon4hMs,
-      flatThresholdPct,
-    );
+    // No later price data yet
+    if (baselinePrice === null) {
+      outcome15m = "UNAVAILABLE";
+      outcome1h = "UNAVAILABLE";
+      outcome4h = "UNAVAILABLE";
+    } else {
+      // Baseline exists but no later data -- PENDING until horizon elapses
+      outcome15m = "PENDING";
+      outcome1h = "PENDING";
+      outcome4h = "PENDING";
+    }
   }
 
   const outcomeStatus = determineOutcomeStatus(outcome15m, outcome1h, outcome4h);

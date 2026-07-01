@@ -131,11 +131,11 @@ export default function PaperOutcomeTrackerPanel() {
               <p className="data-mono text-lg" style={{ color: "#f59e0b" }}>{summary.pending}</p>
             </div>
             <div className="rounded-lg p-3" style={{ background: "rgba(201,215,227,0.03)" }}>
-              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Wins</p>
+              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Favorable</p>
               <p className="data-mono text-lg" style={{ color: "#22c55e" }}>{summary.wins}</p>
             </div>
             <div className="rounded-lg p-3" style={{ background: "rgba(201,215,227,0.03)" }}>
-              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Losses</p>
+              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Unfavorable</p>
               <p className="data-mono text-lg" style={{ color: "#ef4444" }}>{summary.losses}</p>
             </div>
             <div className="rounded-lg p-3" style={{ background: "rgba(201,215,227,0.03)" }}>
@@ -143,17 +143,17 @@ export default function PaperOutcomeTrackerPanel() {
               <p className="data-mono text-lg" style={{ color: "#a78b63" }}>{summary.flat}</p>
             </div>
             <div className="rounded-lg p-3" style={{ background: "rgba(201,215,227,0.03)" }}>
-              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Blocked/NA</p>
+              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Blocked / no action</p>
               <p className="data-mono text-lg" style={{ color: "#6b7280" }}>{summary.blocked + summary.noAction}</p>
             </div>
             <div className="rounded-lg p-3" style={{ background: "rgba(201,215,227,0.03)" }}>
-              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Win rate</p>
+              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Favorable rate</p>
               <p className="data-mono text-lg" style={{ color: summary.winRate >= 50 ? "#22c55e" : "#f59e0b" }}>
                 {summary.measurable > 0 ? summary.winRate.toFixed(1) + "%" : "--"}
               </p>
             </div>
             <div className="rounded-lg p-3" style={{ background: "rgba(201,215,227,0.03)" }}>
-              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Avg move</p>
+              <p className="text-[9px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Avg price move</p>
               <p className="data-mono text-lg" style={{ color: "#9ca3af" }}>
                 {summary.avgChangePct !== null ? summary.avgChangePct.toFixed(2) + "%" : "--"}
               </p>
@@ -233,7 +233,7 @@ export default function PaperOutcomeTrackerPanel() {
             <table className="w-full min-w-[600px] border-collapse text-left">
               <thead style={{ backgroundColor: "#090d13" }}>
                 <tr>
-                  {["Symbol", "Total", "Win rate", "Avg move", "Pending", "Latest outcome"].map((h) => (
+                  {["Symbol", "Total", "Favorable", "Avg move", "Pending", "Latest"].map((h) => (
                     <th key={h} className="px-3 py-3 label-upper" style={{ color: "#4b5563", fontSize: 9 }}>{h}</th>
                   ))}
                 </tr>

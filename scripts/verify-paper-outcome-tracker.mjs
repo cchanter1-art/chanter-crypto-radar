@@ -524,8 +524,87 @@ try {
     assert.equal(updated.latestPrice, r.latestPrice, "Null market data should not change price");
   }
 
+
+  // 29. Outcome creation from candidate with baseline price
+  {
+    store.clear();
+    const cand = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const outcome = tracker.buildPaperOutcomeRecord(cand, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    assert.ok(outcome, "Must create outcome from candidate");
+    assert.equal(outcome.sourceCandidateId, cand.id);
+    assert.equal(outcome.baselinePrice, 50000);
+    assert.ok(outcome.outcomeStatus !== "UNAVAILABLE", "With baseline price, should not be UNAVAILABLE");
+  }
+
+  // 30. Outcome creation without baseline price is UNAVAILABLE
+  {
+    store.clear();
+    const cand = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const outcome = tracker.buildPaperOutcomeRecord(cand, null);
+    assert.equal(outcome.baselinePrice, null);
+    assert.equal(outcome.outcome15m, "UNAVAILABLE");
+    assert.equal(outcome.outcomeStatus, "UNAVAILABLE");
+  }
+
+  // 31. addOrUpdatePaperOutcome creates then updates without duplicating
+  {
+    store.clear();
+    const cand = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const r1 = tracker.buildPaperOutcomeRecord(cand, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    let history = [];
+    history = tracker.addOrUpdatePaperOutcome(history, r1);
+    assert.equal(history.length, 1, "First add creates 1 record");
+    // Update with same ID but new data
+    const r2 = tracker.updatePaperOutcomeRecord(r1, { price: 51000, time: "2026-01-01T00:20:00.000Z" });
+    history = tracker.addOrUpdatePaperOutcome(history, r2);
+    assert.equal(history.length, 1, "Second add updates existing, no duplicate");
+    assert.equal(history[0].latestPrice, 51000, "Latest price should be updated");
+  }
+
+  // 32. Outcome maturation from PENDING to resolved after time passes
+  {
+    store.clear();
+    const cand = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const r1 = tracker.buildPaperOutcomeRecord(cand, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    assert.equal(r1.outcomeStatus, "PENDING", "Fresh outcome should be PENDING");
+    // Simulate 20 minutes later with +2% price
+    const baselineMs = Date.parse(r1.baselineTime);
+    const u1 = tracker.updatePaperOutcomeRecord(r1, { price: 51000, time: new Date(baselineMs + 20 * 60 * 1000).toISOString() }, baselineMs + 20 * 60 * 1000);
+    assert.equal(u1.outcome15m, "WIN", "After 15m+ with +2%, should be WIN");
+    assert.notEqual(u1.outcomeStatus, "PENDING", "Should no longer be PENDING");
+  }
+
+  // 33. No execution fields in addOrUpdatePaperOutcome output
+  {
+    store.clear();
+    const cand = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const r = tracker.buildPaperOutcomeRecord(cand, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    let history = [];
+    history = tracker.addOrUpdatePaperOutcome(history, r);
+    const json = JSON.stringify(history);
+    const forbidden = ["tradeId", "orderId", "positionId", "execution", "buy", "sell", "openPosition"];
+    for (const field of forbidden) {
+      assert.ok(!json.includes('"' + field + '"'), "addOrUpdate output must not contain: " + field);
+    }
+  }
+
+  // 34. Multiple symbols create separate outcomes
+  {
+    store.clear();
+    const cand1 = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const cand2 = makeCandidate({ symbol: "ETHUSDT", direction: "SHORT", finalScore: 83 });
+    const r1 = tracker.buildPaperOutcomeRecord(cand1, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    const r2 = tracker.buildPaperOutcomeRecord(cand2, { price: 3000, time: "2026-01-01T00:00:00.000Z" });
+    let history = [];
+    history = tracker.addOrUpdatePaperOutcome(history, r1);
+    history = tracker.addOrUpdatePaperOutcome(history, r2);
+    assert.equal(history.length, 2, "Two different candidates create two outcomes");
+    assert.ok(history.some((h) => h.symbol === "BTCUSDT"));
+    assert.ok(history.some((h) => h.symbol === "ETHUSDT"));
+  }
+
   console.log(
-    "Paper Outcome Tracker v1.1 verification passed: LONG win/loss, SHORT win/loss, " +
+    "Paper Outcome Tracker v1.2 verification passed: LONG win/loss, SHORT win/loss, " +
     "WAIT=NO_ACTION, BLOCKED stays BLOCKED, missing baseline=UNAVAILABLE, " +
     "not enough time=PENDING, flat move=FLAT, no duplicates, malformed safe, " +
     "backward compatible, no execution fields, summary correct, filter/sort work, " +

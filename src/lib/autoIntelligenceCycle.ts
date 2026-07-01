@@ -24,11 +24,14 @@ import {
 import {
   buildCandidateFromSnapshot,
   addOrUpdateCandidate,
+  loadCandidateReviewQueue,
 } from "@/lib/candidateReviewQueue";
 import {
+  buildPaperOutcomeRecord,
   updatePaperOutcomeRecord,
   loadPaperOutcomeHistory,
   savePaperOutcomeHistory,
+  addOrUpdatePaperOutcome,
 } from "@/lib/paperOutcomeTracker";
 import {
   loadSignalQualityHistory,
@@ -580,7 +583,60 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
         // Candidate creation is best-effort; never block the tick
       }
 
-      // === Paper Outcome Tracker: update existing outcomes with latest price ===
+      // === Paper Outcome Tracker: create outcomes for new candidates + update existing ===
+      try {
+        const priceBySymbol = new Map<string, { price: number; time: string }>();
+        for (const [sym, candles] of candlesBySymbolMap) {
+          if (candles.length > 0) {
+            const last = candles[candles.length - 1];
+            priceBySymbol.set(sym, { price: last.close, time: last.timestamp });
+          }
+        }
+
+        // Create outcomes for candidates that don't have one yet
+        const allCandidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
+        let existingOutcomes = loadPaperOutcomeHistory();
+        const existingOutcomeIds = new Set(existingOutcomes.map((o) => o.sourceCandidateId));
+
+        for (const cand of allCandidates) {
+          if (existingOutcomeIds.has(cand.id)) continue;
+          const md = priceBySymbol.get(cand.symbol);
+          if (!md) {
+            outcomesSkipped += 1;
+            continue;
+          }
+          const newOutcome = buildPaperOutcomeRecord(cand, md);
+          existingOutcomes = addOrUpdatePaperOutcome(existingOutcomes, newOutcome);
+          outcomesUpdated += 1;
+        }
+
+        // Update existing outcomes with latest price data
+        for (let i = 0; i < existingOutcomes.length; i++) {
+          const record = existingOutcomes[i];
+          if (record.outcomeStatus === "BLOCKED" || record.outcomeStatus === "NO_ACTION") {
+            outcomesSkipped += 1;
+            continue;
+          }
+          const md = priceBySymbol.get(record.symbol);
+          if (!md) {
+            outcomesSkipped += 1;
+            continue;
+          }
+          const prevStatus = record.outcomeStatus;
+          const updated = updatePaperOutcomeRecord(record, md);
+          existingOutcomes[i] = updated;
+          outcomesUpdated += 1;
+          if (updated.outcomeStatus !== prevStatus && updated.outcomeStatus !== "PENDING" && updated.outcomeStatus !== "UNAVAILABLE") {
+            outcomesResolved += 1;
+          }
+        }
+
+        if (outcomesUpdated > 0) {
+          savePaperOutcomeHistory(existingOutcomes);
+        }
+      } catch {
+        // Outcome tracking is best-effort; never block the tick
+      }
       try {
         const priceBySymbol = new Map<string, { price: number; time: string }>();
         for (const [sym, candles] of candlesBySymbolMap) {

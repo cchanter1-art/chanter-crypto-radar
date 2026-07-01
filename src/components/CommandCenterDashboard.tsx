@@ -1017,14 +1017,14 @@ export default function CommandCenterDashboard() {
                   detail={localSnapshot.paperOutcomeSummary.measurable + " measurable"}
                 />
                 <Metric
-                  label="Wins"
+                  label="Favorable"
                   value={String(localSnapshot.paperOutcomeSummary.wins)}
-                  detail={localSnapshot.paperOutcomeSummary.measurable > 0 ? localSnapshot.paperOutcomeSummary.winRate.toFixed(1) + "% rate" : "--"}
+                  detail={localSnapshot.paperOutcomeSummary.measurable > 0 ? localSnapshot.paperOutcomeSummary.winRate.toFixed(1) + "% favorable" : "--"}
                 />
                 <Metric
-                  label="Losses"
+                  label="Unfavorable"
                   value={String(localSnapshot.paperOutcomeSummary.losses)}
-                  detail={localSnapshot.paperOutcomeSummary.flat + " flat"}
+                  detail={localSnapshot.paperOutcomeSummary.flat + " flat (no move)"}
                 />
                 <Metric
                   label="Pending"
@@ -1034,7 +1034,7 @@ export default function CommandCenterDashboard() {
                 <Metric
                   label="Resolved"
                   value={String(localSnapshot.paperOutcomeSummary.measurable)}
-                  detail="Win/loss/flat outcomes"
+                  detail="Favorable / unfavorable / flat"
                 />
                 <Metric
                   label="Best symbol"
