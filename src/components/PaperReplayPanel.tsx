@@ -5,9 +5,16 @@ import {
   explainReplayResult,
   type ReplayResult,
 } from "@/lib/paperReplayEngine";
+import {
+  buildReplayWindows,
+  summarizeReplayWindows,
+  explainReplayDataset,
+  type ReplayDatasetSummary,
+} from "@/lib/replayDataset";
 
 export default function PaperReplayPanel() {
   const [result, setResult] = useState<ReplayResult | null>(null);
+  const [datasetSummary, setDatasetSummary] = useState<ReplayDatasetSummary | null>(null);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(() => {
@@ -15,6 +22,12 @@ export default function PaperReplayPanel() {
     try {
       const r = runPaperReplay();
       setResult(r);
+      try {
+        const windows = buildReplayWindows();
+        setDatasetSummary(summarizeReplayWindows(windows));
+      } catch {
+        setDatasetSummary(null);
+      }
     } catch {
       // ignore
     } finally {
@@ -100,6 +113,65 @@ export default function PaperReplayPanel() {
           <div className="rounded-lg p-3 text-xs leading-5" style={{ backgroundColor: "rgba(245, 158, 11, 0.04)", border: "1px solid rgba(245, 158, 11, 0.1)" }}>
             <p style={{ color: "#9ca3af" }}>{explainReplayResult(summary)}</p>
           </div>
+
+          {datasetSummary && datasetSummary.totalWindows > 0 && (
+            <div className="rounded-lg p-3 space-y-3" style={{ backgroundColor: "rgba(99, 102, 241, 0.03)", border: "1px solid rgba(99, 102, 241, 0.1)" }}>
+              <div className="text-xs font-semibold" style={{ color: "#818cf8" }}>Replay Windows Dataset</div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Metric label="Windows Scanned" value={String(datasetSummary.totalWindows)} />
+                <Metric label="Measurable" value={String(datasetSummary.measurableWindows)} />
+                <Metric label="Unavailable" value={String(datasetSummary.unavailableWindows)} />
+                <Metric label="Symbols" value={String(datasetSummary.symbolsScanned)} />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Metric label="Favorable" value={String(datasetSummary.favorableCount)} highlight={datasetSummary.favorableCount > 0} />
+                <Metric label="Unfavorable" value={String(datasetSummary.unfavorableCount)} />
+                <Metric label="Flat" value={String(datasetSummary.flatCount)} />
+                <Metric label="Avg Move" value={datasetSummary.averageMovePct !== null ? datasetSummary.averageMovePct.toFixed(2) + "%" : "--"} />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Metric label="15m Windows" value={String(datasetSummary.horizonCounts["15m"])} />
+                <Metric label="1h Windows" value={String(datasetSummary.horizonCounts["1h"])} />
+                <Metric label="4h Windows" value={String(datasetSummary.horizonCounts["4h"])} />
+                <Metric label="Best Symbol" value={datasetSummary.bestSymbol ?? "--"} />
+              </div>
+              {datasetSummary.bySymbol.length > 0 && (
+                <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(201,215,227,0.05)" }}>
+                  <table className="w-full min-w-[600px] border-collapse text-left">
+                    <thead style={{ backgroundColor: "#090d13" }}>
+                      <tr>
+                        {["Symbol", "Total", "Measurable", "Unavailable", "Favorable", "Unfavorable", "Win Rate", "Best Horizon"].map((h) => (
+                          <th key={h} className="px-3 py-2 label-upper" style={{ color: "#4b5563", fontSize: 9 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {datasetSummary.bySymbol.map((s) => (
+                        <tr key={s.symbol} style={{ borderTop: "1px solid rgba(201,215,227,0.04)" }}>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#9ca3af" }}>{s.symbol}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#6b7280" }}>{s.total}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#9ca3af" }}>{s.measurable}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#6b7280" }}>{s.unavailable}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#22c55e" }}>{s.favorable}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#ef4444" }}>{s.unfavorable}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: s.winRate !== null && s.winRate >= 60 ? "#22c55e" : "#9ca3af" }}>{s.winRate !== null ? s.winRate.toFixed(0) + "%" : "--"}</td>
+                          <td className="px-3 py-2 text-xs" style={{ color: "#6b7280" }}>{s.bestHorizon ?? "--"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="text-xs leading-5" style={{ color: "#9ca3af" }}>
+                {explainReplayDataset(datasetSummary)}
+              </div>
+              {datasetSummary.unavailableWindows > 0 && (
+                <div className="text-xs" style={{ color: "#f59e0b" }}>
+                  ⚠ {datasetSummary.unavailableWindows} window(s) missing candle data. Run Auto Intelligence Cycle to collect more data.
+                </div>
+              )}
+            </div>
+          )}
 
           {steps.length > 0 && (
             <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(201,215,227,0.05)" }}>

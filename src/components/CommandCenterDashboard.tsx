@@ -56,6 +56,7 @@ import {
   getActivePaperWatchSessions,
 } from "@/lib/paperWatchSession";
 import { runPaperReplay, explainReplayResult } from "@/lib/paperReplayEngine";
+import { buildReplayWindows, summarizeReplayWindows } from "@/lib/replayDataset";
 import {
   buildDecisionDashboardSnapshot,
   getDecisionActionLabel,
@@ -309,6 +310,7 @@ function createLocalSnapshot() {
     paperOutcomeSummary: buildPaperOutcomeSummary(loadPaperOutcomeHistory()),
     bestOutcomeSymbol: getBestOutcomeSymbol(loadPaperOutcomeHistory())?.symbol ?? null,
     replaySummary: (() => { try { return runPaperReplay().summary; } catch { return null; } })(),
+    replayDatasetSummary: (() => { try { return summarizeReplayWindows(buildReplayWindows()); } catch { return null; } })(),
     paperWatchSessions: getActivePaperWatchSessions(),
     paperActionPlan: (() => {
       const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
@@ -937,7 +939,7 @@ export default function CommandCenterDashboard() {
 <SectionCard
             id="replay-confidence-title"
             title="Replay Confidence"
-            subtitle={localSnapshot.replaySummary ? localSnapshot.replaySummary.totalSteps + " decisions replayed -- " + (localSnapshot.replaySummary.measurableWinRate !== null ? localSnapshot.replaySummary.measurableWinRate.toFixed(0) + "% win rate" : "pending proof") : "No replay data yet"}
+            subtitle={localSnapshot.replaySummary ? localSnapshot.replaySummary.totalSteps + " decisions -- " + (localSnapshot.replaySummary.measurableWinRate !== null ? localSnapshot.replaySummary.measurableWinRate.toFixed(0) + "% win rate" : "pending proof") + (localSnapshot.replayDatasetSummary && localSnapshot.replayDatasetSummary.bestSymbol ? " -- best: " + localSnapshot.replayDatasetSummary.bestSymbol : "") : "No replay data yet"}
             icon={<Activity size={17} />}
             badge={localSnapshot.replaySummary?.confidenceLabel ?? "NO_DATA"}
           >
@@ -964,6 +966,16 @@ export default function CommandCenterDashboard() {
                 <div className="mt-2 rounded-lg p-2 text-xs leading-5" style={{ backgroundColor: "rgba(245, 158, 11, 0.04)", border: "1px solid rgba(245, 158, 11, 0.08)" }}>
                   <p style={{ color: "#9ca3af" }}>{explainReplayResult(localSnapshot.replaySummary)}</p>
                 </div>
+                {localSnapshot.replayDatasetSummary && localSnapshot.replayDatasetSummary.unavailableWindows > 0 && (
+                  <div className="mt-2 text-xs" style={{ color: "#f59e0b" }}>
+                    ⚠ {localSnapshot.replayDatasetSummary.unavailableWindows} replay window(s) missing candle data.
+                  </div>
+                )}
+                {localSnapshot.replayDatasetSummary && localSnapshot.replayDatasetSummary.measurableWindows > 0 && (
+                  <div className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+                    Measurable sample: {localSnapshot.replayDatasetSummary.measurableWindows} window(s) across {localSnapshot.replayDatasetSummary.symbolsScanned} symbol(s).
+                  </div>
+                )}
               </>
             ) : (
               <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
