@@ -17,6 +17,7 @@
     "test:opportunity-ranking": "node scripts/verify-opportunity-ranking.mjs",
     "test:paper-outcome-tracker": "node scripts/verify-paper-outcome-tracker.mjs",
     "test:decision-dashboard": "node scripts/verify-decision-dashboard.mjs",
+    "test:paper-action-plan": "node scripts/verify-paper-action-plan.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

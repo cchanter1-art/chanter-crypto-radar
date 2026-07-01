@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
   Crosshair,
+  ClipboardList,
   AlertTriangle,
   BarChart3,
   Clock3,
@@ -45,6 +46,10 @@ import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive, getLatestAutoObservation } from "@/lib/autoIntelligenceCycle";
 import { getCandidateSummary } from "@/lib/candidateReviewQueue";
 import { buildOpportunityRankings } from "@/lib/opportunityRanking";
+import {
+  getTopPaperActionPlan,
+  explainPaperActionPlan,
+} from "@/lib/paperActionPlan";
 import {
   buildDecisionDashboardSnapshot,
   getDecisionActionLabel,
@@ -297,6 +302,19 @@ function createLocalSnapshot() {
     candidateSummary: getCandidateSummary(),
     paperOutcomeSummary: buildPaperOutcomeSummary(loadPaperOutcomeHistory()),
     bestOutcomeSymbol: getBestOutcomeSymbol(loadPaperOutcomeHistory())?.symbol ?? null,
+    paperActionPlan: (() => {
+      const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
+      const rankings = buildOpportunityRankings(candidates);
+      const priceMap = new Map<string, number | null>();
+      // Try to get reference price from outcomes or candidates
+      const outcomes = loadPaperOutcomeHistory();
+      for (const o of outcomes) {
+        if (o.latestPrice !== null && !priceMap.has(o.symbol)) priceMap.set(o.symbol, o.latestPrice);
+      }
+      const symSummaries = buildPaperOutcomeSymbolSummary(outcomes);
+      const topPlan = getTopPaperActionPlan(candidates, rankings, priceMap, symSummaries);
+      return topPlan;
+    })(),
     primaryDecision: (() => {
       const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
       const rankings = buildOpportunityRankings(candidates);
@@ -909,6 +927,70 @@ export default function CommandCenterDashboard() {
           </SectionCard>
 
 <SectionCard
+            id="paper-action-plan-title"
+            title="Paper Action Plan"
+            subtitle={localSnapshot.paperActionPlan ? localSnapshot.paperActionPlan.symbol + ": " + localSnapshot.paperActionPlan.setupType : "Run Auto Intelligence Cycle to generate a paper-only action plan preview."}
+            icon={<ClipboardList size={17} />}
+            badge={localSnapshot.paperActionPlan ? localSnapshot.paperActionPlan.action : "No plan"}
+          >
+            {localSnapshot.paperActionPlan ? (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+                  <Metric
+                    label="Symbol"
+                    value={localSnapshot.paperActionPlan.symbol}
+                    detail={localSnapshot.paperActionPlan.direction + " -- " + localSnapshot.paperActionPlan.confidenceLabel}
+                  />
+                  <Metric
+                    label="Paper action"
+                    value={localSnapshot.paperActionPlan.action}
+                    detail={localSnapshot.paperActionPlan.setupType}
+                  />
+                  <Metric
+                    label="Reference price"
+                    value={localSnapshot.paperActionPlan.referencePrice !== null ? localSnapshot.paperActionPlan.referencePrice.toFixed(2) : "Unavailable"}
+                    detail={localSnapshot.paperActionPlan.referencePrice !== null ? "From latest candle" : "No price data yet"}
+                  />
+                  <Metric
+                    label="Score"
+                    value={localSnapshot.paperActionPlan.finalScore + "/100"}
+                    detail={localSnapshot.paperActionPlan.evidenceCompleteness + " evidence"}
+                  />
+                  <Metric
+                    label="Outcome proof"
+                    value={localSnapshot.paperActionPlan.outcomeTracked > 0 ? String(localSnapshot.paperActionPlan.outcomeTracked) + " tracked" : "None"}
+                    detail={localSnapshot.paperActionPlan.outcomeWinRate !== null ? localSnapshot.paperActionPlan.outcomeWinRate.toFixed(0) + "% favorable" : "No measurable"}
+                  />
+                </div>
+                <div className="mt-4 rounded-lg p-4" style={{ background: "rgba(0,0,0,0.10)", border: "1px solid rgba(201,215,227,0.04)" }}>
+                  <p className="mb-2 text-[10px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Plan Brief</p>
+                  <p className="text-sm leading-6" style={{ color: "#c9d7e3" }}>{explainPaperActionPlan(localSnapshot.paperActionPlan)}</p>
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Confirmation needed</p>
+                      <p className="text-[11px] leading-5" style={{ color: "#9ca3af" }}>{localSnapshot.paperActionPlan.confirmationNeeded}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Invalidation / blocker</p>
+                      <p className="text-[11px] leading-5" style={{ color: localSnapshot.paperActionPlan.action === "IGNORE" ? "#ef4444" : "#f59e0b" }}>{localSnapshot.paperActionPlan.invalidationReason}</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px]" style={{ color: "#6b7280" }}>Risk note: {localSnapshot.paperActionPlan.riskNote}</p>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
+                <p className="text-sm" style={{ color: "#6b7280" }}>No paper action plan yet.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Run Auto Intelligence Cycle to generate a paper-only action plan preview.</p>
+              </div>
+            )}
+            <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+              <ShieldCheck className="mt-0.5 shrink-0" size={13} />
+              <p>No wallet connection. No real trades. Paper-only tracking. Not financial advice.</p>
+            </div>
+          </SectionCard>
+
+          <SectionCard
             id="primary-decision-title"
             title="Primary Decision"
             subtitle={localSnapshot.primaryDecision ? localSnapshot.primaryDecision.symbol + ": " + getDecisionActionLabel(localSnapshot.primaryDecision.action) + " (" + localSnapshot.primaryDecision.confidenceLabel + " confidence)" : "No decision yet. Start the Auto Intelligence Cycle."}
