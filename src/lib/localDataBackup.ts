@@ -76,6 +76,10 @@ import {
   MAX_PAPER_WATCH_SESSIONS,
   type PaperWatchSession,
 } from "@/lib/paperWatchSession";
+import {
+  normalizeCandleStoreRecord,
+  type CandleStoreRecord,
+} from "@/lib/candleStore";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -123,6 +127,7 @@ export interface LocalDataBackup {
   candidateReviewQueue: CandidateReviewRecord[];
   paperOutcomeHistory: PaperOutcomeRecord[];
   paperWatchSessions: PaperWatchSession[];
+  candleStoreRecords: CandleStoreRecord[];
   settings: AppSettings;
 }
 
@@ -146,6 +151,7 @@ export interface ImportedLocalDataBackup {
   candidateReviewQueue: CandidateReviewRecord[];
   paperOutcomeHistory: PaperOutcomeRecord[];
   paperWatchSessions: PaperWatchSession[];
+  candleStoreRecords?: CandleStoreRecord[];
 }
 
 type ValidationResult<T> =
@@ -682,6 +688,7 @@ export function createLocalDataBackup(
   candidateReviewQueue: CandidateReviewRecord[] = [],
   paperOutcomeHistory: PaperOutcomeRecord[] = [],
   paperWatchSessions: PaperWatchSession[] = [],
+  candleStoreRecords: CandleStoreRecord[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -785,6 +792,9 @@ export function createLocalDataBackup(
       .map(normalizePaperWatchSession)
       .filter((r): r is PaperWatchSession => r !== null)
       .slice(0, MAX_PAPER_WATCH_SESSIONS),
+    candleStoreRecords: candleStoreRecords
+      .map(normalizeCandleStoreRecord)
+      .filter((r): r is CandleStoreRecord => r !== null),
     settings: { ...state.settings },
   };
 }
@@ -932,6 +942,13 @@ export function parseLocalDataBackup(
         .slice(0, MAX_PAPER_WATCH_SESSIONS)
     : [];
 
+  // Validate candle store records (optional for backward compat)
+  const candleStoreRecords: CandleStoreRecord[] = Array.isArray(parsed.candleStoreRecords)
+    ? parsed.candleStoreRecords
+        .map(normalizeCandleStoreRecord)
+        .filter((r): r is CandleStoreRecord => r !== null)
+    : [];
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -964,6 +981,7 @@ export function parseLocalDataBackup(
       candidateReviewQueue,
       paperOutcomeHistory,
       paperWatchSessions,
+      candleStoreRecords,
     },
   };
 }

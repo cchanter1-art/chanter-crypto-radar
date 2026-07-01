@@ -57,6 +57,7 @@ import {
 } from "@/lib/paperWatchSession";
 import { runPaperReplay, explainReplayResult } from "@/lib/paperReplayEngine";
 import { buildReplayWindows, summarizeReplayWindows } from "@/lib/replayDataset";
+import { getCandleStoreMap, summarizeCandleStore } from "@/lib/candleStore";
 import {
   buildDecisionDashboardSnapshot,
   getDecisionActionLabel,
@@ -311,6 +312,7 @@ function createLocalSnapshot() {
     bestOutcomeSymbol: getBestOutcomeSymbol(loadPaperOutcomeHistory())?.symbol ?? null,
     replaySummary: (() => { try { return runPaperReplay().summary; } catch { return null; } })(),
     replayDatasetSummary: (() => { try { return summarizeReplayWindows(buildReplayWindows()); } catch { return null; } })(),
+    candleStoreSummary: (() => { try { return summarizeCandleStore(getCandleStoreMap()); } catch { return null; } })(),
     paperWatchSessions: getActivePaperWatchSessions(),
     paperActionPlan: (() => {
       const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
@@ -974,6 +976,16 @@ export default function CommandCenterDashboard() {
                 {localSnapshot.replayDatasetSummary && localSnapshot.replayDatasetSummary.measurableWindows > 0 && (
                   <div className="mt-1 text-xs" style={{ color: "#6b7280" }}>
                     Measurable sample: {localSnapshot.replayDatasetSummary.measurableWindows} window(s) across {localSnapshot.replayDatasetSummary.symbolsScanned} symbol(s).
+                  </div>
+                )}
+                {localSnapshot.candleStoreSummary && localSnapshot.candleStoreSummary.totalCandles > 0 && (
+                  <div className="mt-1 text-xs" style={{ color: "#22c55e" }}>
+                    Data source: local outcomes + watch sessions + historical candle store ({localSnapshot.candleStoreSummary.totalCandles} candles).
+                  </div>
+                )}
+                {(!localSnapshot.candleStoreSummary || localSnapshot.candleStoreSummary.totalCandles === 0) && localSnapshot.replaySummary && localSnapshot.replaySummary.totalSteps > 0 && (
+                  <div className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+                    Data source: local outcomes + watch sessions. No historical candle store data.
                   </div>
                 )}
               </>

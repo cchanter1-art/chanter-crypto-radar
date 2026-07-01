@@ -11,10 +11,19 @@ import {
   explainReplayDataset,
   type ReplayDatasetSummary,
 } from "@/lib/replayDataset";
+import {
+  getCandleStoreMap,
+  buildCandleStoreReplayWindows,
+  summarizeCandleStore,
+  type CandleStoreSummary,
+  type HistoricalReplayWindow,
+} from "@/lib/candleStore";
 
 export default function PaperReplayPanel() {
   const [result, setResult] = useState<ReplayResult | null>(null);
   const [datasetSummary, setDatasetSummary] = useState<ReplayDatasetSummary | null>(null);
+  const [candleStoreSummary, setCandleStoreSummary] = useState<CandleStoreSummary | null>(null);
+  const [candleWindows, setCandleWindows] = useState<HistoricalReplayWindow[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(() => {
@@ -27,6 +36,16 @@ export default function PaperReplayPanel() {
         setDatasetSummary(summarizeReplayWindows(windows));
       } catch {
         setDatasetSummary(null);
+      }
+      try {
+        const map = getCandleStoreMap();
+        setCandleStoreSummary(summarizeCandleStore(map));
+        const symbols = [...map.keys()].map((k) => k.split("|")[0]);
+        const uniqueSymbols = [...new Set(symbols)];
+        setCandleWindows(buildCandleStoreReplayWindows(map, uniqueSymbols, "LONG"));
+      } catch {
+        setCandleStoreSummary(null);
+        setCandleWindows([]);
       }
     } catch {
       // ignore
@@ -168,6 +187,56 @@ export default function PaperReplayPanel() {
               {datasetSummary.unavailableWindows > 0 && (
                 <div className="text-xs" style={{ color: "#f59e0b" }}>
                   ⚠ {datasetSummary.unavailableWindows} window(s) missing candle data. Run Auto Intelligence Cycle to collect more data.
+                </div>
+              )}
+            </div>
+          )}
+
+          {candleStoreSummary && candleStoreSummary.totalCandles > 0 && (
+            <div className="rounded-lg p-3 space-y-3" style={{ backgroundColor: "rgba(34, 197, 94, 0.03)", border: "1px solid rgba(34, 197, 94, 0.1)" }}>
+              <div className="text-xs font-semibold" style={{ color: "#22c55e" }}>Historical Candle Store</div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Metric label="Total Candles" value={String(candleStoreSummary.totalCandles)} />
+                <Metric label="Records" value={String(candleStoreSummary.totalRecords)} />
+                <Metric label="15m Candles" value={String(candleStoreSummary.byTimeframe["15m"])} />
+                <Metric label="1h Candles" value={String(candleStoreSummary.byTimeframe["1h"])} />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <Metric label="4h Candles" value={String(candleStoreSummary.byTimeframe["4h"])} />
+                <Metric label="Symbols" value={String(candleStoreSummary.bySymbol.length)} />
+                <Metric label="Oldest" value={candleStoreSummary.oldestCandle ? new Date(candleStoreSummary.oldestCandle).toLocaleDateString() : "--"} />
+                <Metric label="Newest" value={candleStoreSummary.newestCandle ? new Date(candleStoreSummary.newestCandle).toLocaleDateString() : "--"} />
+              </div>
+              {candleStoreSummary.bySymbol.length > 0 && (
+                <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(201,215,227,0.05)" }}>
+                  <table className="w-full min-w-[500px] border-collapse text-left">
+                    <thead style={{ backgroundColor: "#090d13" }}>
+                      <tr>
+                        {["Symbol", "15m", "1h", "4h", "Total"].map((h) => (
+                          <th key={h} className="px-3 py-2 label-upper" style={{ color: "#4b5563", fontSize: 9 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {candleStoreSummary.bySymbol.map((s) => (
+                        <tr key={s.symbol} style={{ borderTop: "1px solid rgba(201,215,227,0.04)" }}>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#9ca3af" }}>{s.symbol}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#6b7280" }}>{s["15m"]}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#6b7280" }}>{s["1h"]}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#6b7280" }}>{s["4h"]}</td>
+                          <td className="px-3 py-2 data-mono text-xs" style={{ color: "#9ca3af" }}>{s.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {candleWindows.length > 0 && (
+                <div className="text-xs" style={{ color: "#6b7280" }}>
+                  {candleWindows.filter((w) => w.available).length} measurable historical windows from candle store.
+                  {candleWindows.filter((w) => !w.available).length > 0 && (
+                    <span style={{ color: "#f59e0b" }}> {candleWindows.filter((w) => !w.available).length} unavailable.</span>
+                  )}
                 </div>
               )}
             </div>

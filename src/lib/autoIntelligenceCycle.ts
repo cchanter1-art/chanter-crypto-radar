@@ -38,6 +38,7 @@ import {
   savePaperWatchSessions,
   updatePaperWatchSessionFromCandle,
 } from "@/lib/paperWatchSession";
+import { addCandles, type StoredCandle } from "@/lib/candleStore";
 import {
   loadSignalQualityHistory,
   saveSignalQualityHistory,
@@ -407,6 +408,21 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       }
 
       candlesBySymbolMap.set(symbol, result.candles);
+      // Save to candle store for historical replay
+      try {
+        const stored: StoredCandle[] = result.candles.map((c) => ({
+          timestamp: c.timestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+          closeTime: c.timestamp,
+        }));
+        addCandles(symbol, "15m", stored, "AUTO_CYCLE");
+      } catch {
+        // Candle store save is best-effort
+      }
       const report = runIntegrityCheckForLive(symbol, result.candles, result.fetchedAt);
       const history = loadMarketDataIntegrityHistory();
       const updated = [report, ...history.filter((r) => r.id !== report.id)];
