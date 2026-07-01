@@ -236,6 +236,26 @@ export default function AutoIntelligenceCyclePanel() {
         </div>
       </div>
 
+      {/* Metrics row 4: signal quality + candidates */}
+      <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Signal Records</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: state.signalRecordsCreated > 0 ? "#84cc16" : "#6b7280" }}>{state.signalRecordsCreated ?? 0}</p>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Signals Skipped</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: state.signalRecordsSkipped > 0 ? "#f59e0b" : "#6b7280" }}>{state.signalRecordsSkipped ?? 0}</p>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Candidates Created</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: state.candidatesCreated > 0 ? "#84cc16" : "#6b7280" }}>{state.candidatesCreated ?? 0}</p>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: "rgba(201, 215, 227, 0.025)", border: "1px solid rgba(201, 215, 227, 0.06)" }}>
+          <p className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#6b7280" }}>Candidates Skipped</p>
+          <p className="mt-1.5 text-sm font-medium" style={{ color: state.candidatesSkipped > 0 ? "#f59e0b" : "#6b7280" }}>{state.candidatesSkipped ?? 0}</p>
+        </div>
+      </div>
+
       {/* Error */}
       {error && (
         <div className="mb-4 rounded-lg p-3" style={{ background: "rgba(239, 68, 68, 0.06)", border: "1px solid rgba(239, 68, 68, 0.16)" }}>

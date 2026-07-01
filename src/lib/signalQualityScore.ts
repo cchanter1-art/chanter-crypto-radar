@@ -732,6 +732,122 @@ export function applyEvidenceModifier(
   };
 }
 
+/**
+ * Build a conservative SignalQualityInput from market data integrity report.
+ * Used by the Auto Intelligence Cycle to create signal quality records automatically.
+ *
+ * This is intentionally conservative:
+ * - Direction is always WAIT (no directional bias from data quality alone)
+ * - Confidence is derived from integrity score (not optimism)
+ * - Risk status is WAIT unless integrity is blocked (then BLOCKED)
+ * - Backtest evidence is "none" (no backtest run for this tick)
+ * - Forward evidence is "none" (no forward test session active)
+ * - Data freshness is derived from integrity freshness
+ * - localMockOnly is true when source is LOCAL_MOCK
+ */
+export function buildSignalInputFromIntegrity(
+  symbol: string,
+  report: {
+    integrityScore: number;
+    source: string;
+    freshnessStatus: string;
+    readinessStatus: string;
+    candleCount: number;
+  },
+): SignalQualityInput | null {
+  if (!report || typeof report.integrityScore !== "number") return null;
+
+  const score = report.integrityScore;
+  const readiness = report.readinessStatus;
+  const freshness = report.freshnessStatus;
+  const source = report.source;
+  const isMock = source === "LOCAL_MOCK";
+  const isBlocked = readiness === "blocked" || score < 30;
+  const isStale = freshness === "stale" || freshness === "delayed";
+
+  // Conservative confidence mapping
+  const confidence: FuturesStrategyConfidence = score >= 85 ? "High" : score >= 50 ? "Medium" : "Low";
+
+  // Conservative risk status
+  const riskStatus: ForwardTestRiskStatus = isBlocked ? "BLOCKED" : "WAIT";
+  const riskReason = isBlocked
+    ? `Integrity blocked: score ${score}/100, readiness ${readiness}`
+    : isStale
+      ? `Data stale: freshness ${freshness}, score ${score}/100`
+      : `Auto observation: score ${score}/100, readiness ${readiness}`;
+
+  // Data freshness mapping
+  const dataFreshness: SignalQualityDataFreshness = isStale
+    ? "stale"
+    : isMock
+      ? "fallback"
+      : "fresh";
+
+  // Scenario derived from readiness (conservative)
+  let scenario: FuturesTestScenario;
+  if (readiness === "ready" || readiness === "clean") {
+    scenario = "Neutral / Current Mock";
+  } else if (readiness === "ready_with_warnings") {
+    scenario = "Choppy / No Trade";
+  } else {
+    scenario = "Choppy / No Trade";
+  }
+
+  // Profile: always "Trend Follow" as default (conservative, most common)
+  const profile: SignalQualityProfile = "Trend Follow";
+
+  // Leverage: 1x (most conservative)
+  const leverage: FuturesLeverage = 1;
+
+  // Direction: WAIT (no directional bias from data quality alone)
+  const direction: ForwardTestDirection = "WAIT";
+
+  // Stop loss / take profit: conservative defaults
+  const stopLossPercent = 3;
+  const takeProfitPercent = 6;
+  const riskRewardRatio = 2;
+
+  // Backtest evidence: none (no backtest run for this tick)
+  const backtestEvidence: SignalQualityBacktestEvidence = {
+    status: "none",
+    runId: null,
+    tradesTaken: 0,
+    winRate: 0,
+    netPnl: 0,
+    maxDrawdown: 0,
+    profitFactor: null,
+  };
+
+  // Forward evidence: none (no forward test session active in auto cycle)
+  const forwardEvidence: SignalQualityForwardEvidence = {
+    status: "none",
+    observationCount: 0,
+    actionableCount: 0,
+    approvedCount: 0,
+    blockedCount: 0,
+    waitCount: 0,
+    directionConsistencyPercent: 0,
+  };
+
+  return {
+    profile,
+    scenario,
+    symbol: symbol as FuturesSymbol,
+    leverage,
+    direction,
+    confidence,
+    stopLossPercent,
+    takeProfitPercent,
+    riskStatus,
+    riskReason,
+    riskRewardRatio,
+    backtestEvidence,
+    forwardEvidence,
+    dataFreshness,
+    localMockOnly: isMock,
+  };
+}
+
 export function evaluateSignalQuality(inputValue: SignalQualityInput): SignalQualityEvaluation {
   const input = normalizeInput(inputValue);
   if (!input) throw new Error("Signal quality input is invalid.");

@@ -75,6 +75,10 @@ export interface AutoIntelligenceCycleState {
   symbolsFailed: number;
   observationsCreated: number;
   observationsSkipped: number;
+  signalRecordsCreated: number;
+  signalRecordsSkipped: number;
+  candidatesCreated: number;
+  candidatesSkipped: number;
   history: AutoIntelligenceCycleRunRecord[];
   autoObservations: AutoObservationRecord[];
 }
@@ -109,6 +113,10 @@ function getDefaultState(): AutoIntelligenceCycleState {
     symbolsFailed: 0,
     observationsCreated: 0,
     observationsSkipped: 0,
+    signalRecordsCreated: 0,
+    signalRecordsSkipped: 0,
+    candidatesCreated: 0,
+    candidatesSkipped: 0,
     history: [],
     autoObservations: [],
   };
@@ -199,6 +207,14 @@ export function normalizeAutoIntelligenceCycleState(
   if (typeof observationsCreated !== "number" || !Number.isFinite(observationsCreated) || observationsCreated < 0) return null;
   const observationsSkipped = v.observationsSkipped;
   if (typeof observationsSkipped !== "number" || !Number.isFinite(observationsSkipped) || observationsSkipped < 0) return null;
+  const signalRecordsCreated = v.signalRecordsCreated;
+  if (typeof signalRecordsCreated !== "number" || !Number.isFinite(signalRecordsCreated) || signalRecordsCreated < 0) return null;
+  const signalRecordsSkipped = v.signalRecordsSkipped;
+  if (typeof signalRecordsSkipped !== "number" || !Number.isFinite(signalRecordsSkipped) || signalRecordsSkipped < 0) return null;
+  const candidatesCreated = v.candidatesCreated;
+  if (typeof candidatesCreated !== "number" || !Number.isFinite(candidatesCreated) || candidatesCreated < 0) return null;
+  const candidatesSkipped = v.candidatesSkipped;
+  if (typeof candidatesSkipped !== "number" || !Number.isFinite(candidatesSkipped) || candidatesSkipped < 0) return null;
   if (!Array.isArray(v.history)) return null;
   const history = v.history.map(normalizeRunRecord).filter(
     (r): r is AutoIntelligenceCycleRunRecord => r !== null,
@@ -227,6 +243,10 @@ export function normalizeAutoIntelligenceCycleState(
     symbolsFailed: symbolsFailed,
     observationsCreated: observationsCreated,
     observationsSkipped: observationsSkipped,
+    signalRecordsCreated: signalRecordsCreated,
+    signalRecordsSkipped: signalRecordsSkipped,
+    candidatesCreated: candidatesCreated,
+    candidatesSkipped: candidatesSkipped,
     history: history.slice(0, MAX_CYCLE_HISTORY),
     autoObservations: autoObservations,
   };
