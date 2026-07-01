@@ -1114,6 +1114,304 @@ try {
     assert.ok(ethLatest, "Must have ETHUSDT latest");
   }
 
+    // --- v3 Explanation Model Tests (51-65) ---
+
+  // 51. RISK_BLOCKED: blocked risk gives RISK_BLOCKED reason
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-20T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "BLOCKED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    sr.input.riskStatus = "BLOCKED";
+    sr.input.riskReason = "Max daily loss exceeded";
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const loaded = cq.loadCandidateReviewQueue();
+    const exp = cq.explainCandidateDecision(loaded[0]);
+    assert.equal(exp.primaryReasonCode, "RISK_BLOCKED");
+    assert.equal(exp.severity, "blocked");
+    assert.ok(exp.blockingFactors.length > 0, "Must have blocking factors");
+  }
+
+  // 52. LOW_FINAL_SCORE: score < 60 gives LOW_FINAL_SCORE
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-21T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 40, evidenceModifier: -5, finalScore: 35, label: "Poor", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: false, autoObsCount: 0, autoObsLatestSymbol: null, autoObsLatestScore: null, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "partial", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const exp = cq.explainCandidateDecision(cq.loadCandidateReviewQueue()[0]);
+    assert.equal(exp.primaryReasonCode, "LOW_FINAL_SCORE");
+    assert.equal(exp.severity, "blocked");
+  }
+
+  // 53. INTEGRITY_STALE: stale integrity gives INTEGRITY_STALE
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-22T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 70, integritySource: "LIVE_READ_ONLY", integrityFreshness: "stale", integrityReadiness: "not_ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(70, "stale", "not_ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const exp = cq.explainCandidateDecision(cq.loadCandidateReviewQueue()[0]);
+    assert.equal(exp.primaryReasonCode, "INTEGRITY_STALE");
+    assert.equal(exp.severity, "warning");
+  }
+
+  // 54. EVIDENCE_MISSING: missing evidence gives EVIDENCE_MISSING
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-23T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 50, evidenceModifier: 0, finalScore: 50, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: false, integrityScore: 0, integritySource: null, integrityFreshness: null, integrityReadiness: null, hasAutoObservations: false, autoObsCount: 0, autoObsLatestSymbol: null, autoObsLatestScore: null, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: false, riskGateStatus: null, completeness: "missing", positiveFactors: [], negativeFactors: [], missingFactors: ["integrity", "auto obs", "forward test", "backtest", "risk gate"] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(0, "stale", "blocked"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const exp = cq.explainCandidateDecision(cq.loadCandidateReviewQueue()[0]);
+    assert.equal(exp.primaryReasonCode, "EVIDENCE_MISSING");
+    assert.ok(exp.missingEvidence.length > 0, "Must have missing evidence");
+  }
+
+  // 55. REVIEW_READY: complete evidence + high score produces REVIEW_READY
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-24T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: ["good integrity"], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const loaded = cq.loadCandidateReviewQueue();
+    assert.equal(loaded[0].candidateStatus, "REVIEW");
+    const exp = cq.explainCandidateDecision(loaded[0]);
+    assert.equal(exp.primaryReasonCode, "REVIEW_READY");
+    assert.equal(exp.severity, "info");
+  }
+
+  // 56. WATCH candidate explains why it is not REVIEW
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-25T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 65, evidenceModifier: 3, finalScore: 68, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 70, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: false, autoObsCount: 0, autoObsLatestSymbol: null, autoObsLatestScore: null, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "partial", positiveFactors: [], negativeFactors: [], missingFactors: ["auto obs"] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(70, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const loaded = cq.loadCandidateReviewQueue();
+    assert.equal(loaded[0].candidateStatus, "WATCH");
+    const exp = cq.explainCandidateDecision(loaded[0]);
+    assert.ok(exp.primaryReasonCode !== "REVIEW_READY", "WATCH candidate must not be REVIEW_READY");
+    assert.ok(exp.explanation.length > 0, "Must have explanation");
+  }
+
+  // 57. Old candidate record without explanation fields still loads and gets explanation
+  {
+    store.clear();
+    // Manually store an old-format record (no dismissReason, but has all required fields)
+    const oldRecord = {
+      id: "candidate-BTCUSDT-15m-2026-01-26T00:00:00.000Z",
+      createdAt: "2026-01-26T00:00:00.000Z",
+      updatedAt: "2026-01-26T00:00:00.000Z",
+      symbol: "BTCUSDT",
+      timeframe: "15m",
+      source: "AUTO_CYCLE",
+      direction: "WAIT",
+      candidateStatus: "WATCH",
+      baseScore: 65,
+      evidenceModifier: 3,
+      finalScore: 68,
+      evidenceCompleteness: "partial",
+      evidencePositiveFactors: [],
+      evidenceNegativeFactors: [],
+      evidenceMissingFactors: ["auto obs"],
+      evidenceCapsApplied: [],
+      evidenceSnapshotAt: "2026-01-26T00:00:00.000Z",
+      integrityScore: 70,
+      integrityReadiness: "ready",
+      latestCandleAt: "2026-01-26T00:00:00.000Z",
+      riskStatus: "APPROVED",
+      riskReason: "ok",
+      reasonSummary: "test",
+      reviewNotes: "",
+      reviewedAt: null,
+      dismissedAt: null,
+      dismissReason: "",
+    };
+    store.set("chanter-candidate-review-queue", JSON.stringify([oldRecord]));
+    const loaded = cq.loadCandidateReviewQueue();
+    assert.equal(loaded.length, 1, "Old record must load");
+    const exp = cq.explainCandidateDecision(loaded[0]);
+    assert.ok(exp.primaryReasonCode, "Must produce a reason code");
+    assert.ok(exp.explanation.length > 0, "Must produce explanation");
+  }
+
+  // 58. Explanation functions are pure (no localStorage writes)
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-27T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    const storeSizeBefore = store.size;
+    cq.explainCandidateDecision(candidate);
+    cq.getCandidateBlockingFactors(candidate);
+    cq.getCandidatePromotionChecklist(candidate);
+    assert.equal(store.size, storeSizeBefore, "Explanation functions must not write to localStorage");
+  }
+
+  // 59. No execution/order/trade/position fields in explanation output
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-28T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    const exp = cq.explainCandidateDecision(candidate);
+    const json = JSON.stringify(exp);
+    const forbidden = ["tradeId", "orderId", "positionId", "execution", "buy", "sell", "openPosition"];
+    for (const field of forbidden) {
+      assert.ok(!json.includes("\"" + field + "\""), "Explanation must not contain: " + field);
+    }
+  }
+
+  // 60. getTopReasonCode returns most common reason
+  {
+    store.clear();
+    // Add 2 WATCH (WAIT_DIRECTION) and 1 BLOCKED (LOW_FINAL_SCORE)
+    for (const [score, sym] of [[68, "BTCUSDT"], [68, "ETHUSDT"], [35, "SOLUSDT"]]) {
+      const sr = makeSignalRecord({
+        createdAt: "2026-01-29T00:00:00.000Z",
+        evidenceSnapshot: {
+          adjusted: { baseScore: score, evidenceModifier: 0, finalScore: score, label: "Watch", capsApplied: [], evidenceFactors: [] },
+          stack: { hasMarketIntegrity: true, integrityScore: 70, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: false, autoObsCount: 0, autoObsLatestSymbol: null, autoObsLatestScore: null, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "partial", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+        },
+      });
+      cq.addOrUpdateCandidate(cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(70, "current", "ready"), symbol: sym }));
+    }
+    const loaded = cq.loadCandidateReviewQueue();
+    const topCode = cq.getTopReasonCode(loaded);
+    assert.ok(topCode, "Must return a top reason code");
+    // Two WATCH candidates -> WAIT_DIRECTION or WATCH_ONLY should be most common
+    assert.ok(topCode === "WAIT_DIRECTION" || topCode === "WATCH_ONLY", "Top reason should be WATCH-related: " + topCode);
+  }
+
+  // 61. getTopReasonCode returns null for empty queue
+  {
+    store.clear();
+    const topCode = cq.getTopReasonCode([]);
+    assert.equal(topCode, null, "Empty queue must return null");
+  }
+
+  // 62. Promotion checklist has 8 items
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-30T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr, integrityReport: makeIntegrity(90, "current", "ready"), symbol: "BTCUSDT" });
+    const checklist = cq.getCandidatePromotionChecklist(candidate);
+    assert.equal(checklist.length, 8, "Must have 8 checklist items");
+    // All should pass for a REVIEW candidate
+    for (const item of checklist) {
+      assert.ok(item.passed || item.label.includes("WAIT") || item.label.includes("Direction"), "Checklist item should pass or be direction: " + item.label);
+    }
+  }
+
+  // 63. Dashboard summary handles empty queue
+  {
+    store.clear();
+    const summary = cq.getCandidateSummary();
+    assert.equal(summary.total, 0);
+    assert.equal(summary.review, 0);
+    assert.equal(summary.watch, 0);
+    assert.equal(summary.blocked, 0);
+    assert.equal(summary.stale, 0);
+    assert.equal(summary.dismissed, 0);
+    assert.equal(summary.latestSymbol, null);
+    assert.equal(summary.latestScore, null);
+  }
+
+  // 64. Malformed candidates are rejected safely
+  {
+    store.clear();
+    store.set("chanter-candidate-review-queue", JSON.stringify([
+      { notARecord: true },
+      null,
+      "string",
+      { id: "bad", createdAt: "not-a-date" },
+    ]));
+    const loaded = cq.loadCandidateReviewQueue();
+    assert.equal(loaded.length, 0, "All malformed records must be rejected");
+    const summary = cq.getCandidateSummary();
+    assert.equal(summary.total, 0, "Empty queue summary for malformed data");
+  }
+
+  // 65. WAIT_DIRECTION reason for WATCH with WAIT direction
+  {
+    store.clear();
+    const sr = makeSignalRecord({
+      createdAt: "2026-01-31T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 75, evidenceModifier: 8, finalScore: 83, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 90, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 5, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 80, hasForwardTest: true, forwardObsCount: 3, forwardLatestDirection: "LONG", hasBacktest: true, backtestReturn: 10, backtestWinRate: 55, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "complete", positiveFactors: [], negativeFactors: [], missingFactors: [] },
+      },
+    });
+    // Direction is WAIT, score is 83 (>= 80), evidence is complete, integrity is healthy
+    // But status should still be REVIEW because score >= 80 + evidence complete
+    // Actually with WAIT direction, the candidate status is REVIEW (score-based)
+    // Let's force a WATCH candidate by using score 68
+    const sr2 = makeSignalRecord({
+      createdAt: "2026-01-31T00:00:00.000Z",
+      evidenceSnapshot: {
+        adjusted: { baseScore: 65, evidenceModifier: 3, finalScore: 68, label: "Watch", capsApplied: [], evidenceFactors: [] },
+        stack: { hasMarketIntegrity: true, integrityScore: 80, integritySource: "LIVE_READ_ONLY", integrityFreshness: "current", integrityReadiness: "ready", hasAutoObservations: true, autoObsCount: 3, autoObsLatestSymbol: "BTCUSDT", autoObsLatestScore: 68, hasForwardTest: false, forwardObsCount: 0, forwardLatestDirection: null, hasBacktest: false, backtestReturn: null, backtestWinRate: null, hasRiskGate: true, riskGateStatus: "APPROVED", completeness: "partial", positiveFactors: [], negativeFactors: [], missingFactors: ["forward test", "backtest"] },
+      },
+    });
+    sr2.input.direction = "WAIT";
+    const candidate = cq.buildCandidateFromSnapshot({ signalRecord: sr2, integrityReport: makeIntegrity(80, "current", "ready"), symbol: "BTCUSDT" });
+    cq.addOrUpdateCandidate(candidate);
+    const loaded = cq.loadCandidateReviewQueue();
+    assert.equal(loaded[0].candidateStatus, "WATCH");
+    assert.equal(loaded[0].direction, "WAIT");
+    const exp = cq.explainCandidateDecision(loaded[0]);
+    assert.equal(exp.primaryReasonCode, "WAIT_DIRECTION", "WATCH + WAIT direction should give WAIT_DIRECTION");
+    assert.equal(exp.severity, "warning");
+  }
+
       console.log(
     "Candidate Review Queue v1 verification passed: REVIEW/WATCH/BLOCKED/STALE status rules, " +
     "risk BLOCKED override, missing evidence guard, dedup update, cap at 200, " +
@@ -1125,7 +1423,11 @@ try {
     "no paper positions, no paper trades, no execution fields, risk controller untouched, " +
     "multi-symbol batch creation, dedup by symbol+timestamp, filter helpers, sort helpers, " +
     "review notes persistence, dismiss reason persistence, malformed record rejection, " +
-    "latest-per-symbol helper.",
+    "latest-per-symbol helper, " +
+    "decision explanation model: RISK_BLOCKED, LOW_FINAL_SCORE, INTEGRITY_STALE, " +
+    "EVIDENCE_MISSING, REVIEW_READY, WAIT_DIRECTION reasons, " +
+    "promotion checklist with 8 items, pure explanation functions, " +
+    "top reason aggregation, empty queue handling, old record compat."
   );
 } finally {
   await server.close();

@@ -397,3 +397,248 @@ export function getCandidateSummary(): {
     lastUpdate: active[0]?.updatedAt ?? null,
   };
 }
+
+// === Decision Explanation Model ===
+
+export type CandidateReasonCode =
+  | "RISK_BLOCKED"
+  | "LOW_FINAL_SCORE"
+  | "INTEGRITY_BLOCKED"
+  | "INTEGRITY_STALE"
+  | "EVIDENCE_MISSING"
+  | "WAIT_DIRECTION"
+  | "REVIEW_READY"
+  | "WATCH_ONLY"
+  | "UNKNOWN_CONSERVATIVE";
+
+export type ExplanationSeverity = "info" | "warning" | "blocked";
+
+export interface PromotionChecklistItem {
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface CandidateExplanation {
+  primaryReasonCode: CandidateReasonCode;
+  primaryReasonLabel: string;
+  explanation: string;
+  shortSummary: string;
+  severity: ExplanationSeverity;
+  blockingFactors: string[];
+  missingEvidence: string[];
+  positiveFactors: string[];
+  promotionChecklist: PromotionChecklistItem[];
+}
+
+export function explainCandidateDecision(candidate: CandidateReviewRecord): CandidateExplanation {
+  const blockingFactors: string[] = [];
+  const missingEvidence: string[] = [];
+  const positiveFactors: string[] = [];
+  const checklist: PromotionChecklistItem[] = [];
+
+  // --- Check 1: Risk status ---
+  const riskBlocked = candidate.riskStatus === "BLOCKED";
+  checklist.push({
+    label: "Risk status not BLOCKED",
+    passed: !riskBlocked,
+    detail: riskBlocked ? `Risk status is BLOCKED: ${candidate.riskReason}` : "Risk status is not blocked.",
+  });
+  if (riskBlocked) {
+    blockingFactors.push(`Risk controller BLOCKED: ${candidate.riskReason}`);
+  }
+
+  // --- Check 2: Final score threshold ---
+  const scorePasses = candidate.finalScore >= 80;
+  checklist.push({
+    label: "Final score >= 80 (REVIEW threshold)",
+    passed: scorePasses,
+    detail: scorePasses ? `Score ${candidate.finalScore} meets threshold.` : `Score ${candidate.finalScore} below threshold of 80.`,
+  });
+  if (!scorePasses && candidate.finalScore < 60) {
+    blockingFactors.push(`Final score ${candidate.finalScore} is below 60 (BLOCKED range)`);
+  } else if (!scorePasses) {
+    blockingFactors.push(`Final score ${candidate.finalScore} is below 80 (WATCH range)`);
+  }
+
+  // --- Check 3: Integrity score ---
+  const integrityHealthy = candidate.integrityScore >= 70;
+  checklist.push({
+    label: "Integrity score >= 70",
+    passed: integrityHealthy,
+    detail: integrityHealthy ? `Integrity score ${candidate.integrityScore}/100 is healthy.` : `Integrity score ${candidate.integrityScore}/100 is below 70.`,
+  });
+  if (candidate.integrityScore < 30) {
+    blockingFactors.push(`Integrity score ${candidate.integrityScore}/100 is critically low (blocked)`);
+  } else if (!integrityHealthy) {
+    blockingFactors.push(`Integrity score ${candidate.integrityScore}/100 is below healthy threshold`);
+  }
+
+  // --- Check 4: Integrity freshness ---
+  const readinessBlocked = candidate.integrityReadiness === "blocked";
+  const readinessStale = candidate.integrityReadiness.includes("stale") || candidate.integrityReadiness === "not_ready";
+  checklist.push({
+    label: "Integrity freshness is current",
+    passed: !readinessBlocked && !readinessStale,
+    detail: readinessBlocked ? "Integrity readiness is blocked." : readinessStale ? "Integrity data is stale." : "Integrity freshness is acceptable.",
+  });
+  if (readinessBlocked) {
+    blockingFactors.push("Integrity readiness is blocked");
+  } else if (readinessStale) {
+    blockingFactors.push("Integrity data is stale");
+  }
+
+  // --- Check 5: Evidence completeness ---
+  const evidenceComplete = candidate.evidenceCompleteness === "complete" || candidate.evidenceCompleteness === "partial";
+  checklist.push({
+    label: "Evidence completeness is partial or better",
+    passed: evidenceComplete,
+    detail: `Evidence completeness: ${candidate.evidenceCompleteness}`,
+  });
+  if (candidate.evidenceCompleteness === "missing") {
+    missingEvidence.push("No evidence sources available");
+  }
+  if (candidate.evidenceMissingFactors && candidate.evidenceMissingFactors.length > 0) {
+    for (const m of candidate.evidenceMissingFactors) {
+      missingEvidence.push(m);
+    }
+  }
+
+  // --- Check 6: Direction ---
+  const directionIsWait = candidate.direction === "WAIT";
+  checklist.push({
+    label: "Direction is actionable (not WAIT)",
+    passed: !directionIsWait,
+    detail: directionIsWait ? "Direction is WAIT (conservative default from auto cycle)." : `Direction is ${candidate.direction}.`,
+  });
+  if (directionIsWait && candidate.candidateStatus === "WATCH") {
+    blockingFactors.push("Direction is WAIT (no directional signal)");
+  }
+
+  // --- Check 7: Source ---
+  const isMock = candidate.source === "LOCAL_MOCK" || candidate.source.includes("MOCK");
+  checklist.push({
+    label: "Source is live read-only or clearly marked",
+    passed: true,
+    detail: isMock ? "Source is LOCAL_MOCK (clearly marked)." : "Source is live read-only.",
+  });
+
+  // --- Check 8: No execution fields ---
+  checklist.push({
+    label: "No execution/order fields present",
+    passed: true,
+    detail: "Candidate is review-only with no trading fields.",
+  });
+
+  // --- Positive factors ---
+  if (candidate.evidencePositiveFactors) {
+    for (const p of candidate.evidencePositiveFactors) {
+      positiveFactors.push(p);
+    }
+  }
+  if (integrityHealthy) positiveFactors.push(`Integrity score ${candidate.integrityScore}/100 is healthy`);
+  if (scorePasses) positiveFactors.push(`Final score ${candidate.finalScore} meets REVIEW threshold`);
+  if (!riskBlocked) positiveFactors.push("Risk status is not blocked");
+  if (evidenceComplete) positiveFactors.push(`Evidence completeness: ${candidate.evidenceCompleteness}`);
+
+  // --- Determine primary reason ---
+  let primaryReasonCode: CandidateReasonCode;
+  let primaryReasonLabel: string;
+  let explanation: string;
+  let shortSummary: string;
+  let severity: ExplanationSeverity;
+
+  if (riskBlocked) {
+    primaryReasonCode = "RISK_BLOCKED";
+    primaryReasonLabel = "Risk Controller Blocked";
+    explanation = `This candidate is BLOCKED because the risk controller returned BLOCKED status: ${candidate.riskReason}. No review promotion is possible until risk status changes.`;
+    shortSummary = "Risk-blocked";
+    severity = "blocked";
+  } else if (candidate.evidenceCompleteness === "missing") {
+    primaryReasonCode = "EVIDENCE_MISSING";
+    primaryReasonLabel = "Missing Evidence";
+    explanation = `Evidence completeness is "missing". No evidence sources (integrity, auto observations, forward test, backtest, risk gate) are available. Score cannot be trusted for review.`;
+    shortSummary = "No evidence";
+    severity = "warning";
+  } else if (candidate.finalScore < 60) {
+    primaryReasonCode = "LOW_FINAL_SCORE";
+    primaryReasonLabel = "Low Final Score";
+    explanation = `Final score ${candidate.finalScore} is below 60, placing this candidate in BLOCKED range. Base score was ${candidate.baseScore} with evidence modifier ${candidate.evidenceModifier >= 0 ? "+" : ""}${candidate.evidenceModifier}.`;
+    shortSummary = `Score ${candidate.finalScore} too low`;
+    severity = "blocked";
+  } else if (readinessBlocked || candidate.integrityScore < 30) {
+    primaryReasonCode = "INTEGRITY_BLOCKED";
+    primaryReasonLabel = "Integrity Blocked";
+    explanation = `Market data integrity is blocked (score ${candidate.integrityScore}/100, readiness: ${candidate.integrityReadiness}). Data quality is insufficient for review.`;
+    shortSummary = "Integrity blocked";
+    severity = "blocked";
+  } else if (readinessStale) {
+    primaryReasonCode = "INTEGRITY_STALE";
+    primaryReasonLabel = "Stale Market Data";
+    explanation = `Market data is stale (readiness: ${candidate.integrityReadiness}). Latest candle: ${candidate.latestCandleAt}. Candidate is marked STALE until fresh data is available.`;
+    shortSummary = "Data is stale";
+    severity = "warning";
+  } else if (candidate.candidateStatus === "REVIEW") {
+    primaryReasonCode = "REVIEW_READY";
+    primaryReasonLabel = "Review Ready";
+    explanation = `This candidate meets all criteria for review: final score ${candidate.finalScore} >= 80, evidence is ${candidate.evidenceCompleteness}, integrity is healthy, and risk is not blocked.`;
+    shortSummary = "Ready for review";
+    severity = "info";
+  } else if (directionIsWait) {
+    primaryReasonCode = "WAIT_DIRECTION";
+    primaryReasonLabel = "WAIT Direction";
+    explanation = `Direction is WAIT (conservative default from auto cycle). Score ${candidate.finalScore} may be acceptable but no directional signal is present. Candidate remains in WATCH.`;
+    shortSummary = "No direction signal";
+    severity = "warning";
+  } else if (candidate.candidateStatus === "WATCH") {
+    primaryReasonCode = "WATCH_ONLY";
+    primaryReasonLabel = "Watch Only";
+    explanation = `Final score ${candidate.finalScore} is in WATCH range (60-79). Candidate needs score >= 80 with complete evidence and healthy integrity to reach REVIEW.`;
+    shortSummary = "Watch: score below 80";
+    severity = "warning";
+  } else {
+    primaryReasonCode = "UNKNOWN_CONSERVATIVE";
+    primaryReasonLabel = "Conservative Default";
+    explanation = `Candidate status is ${candidate.candidateStatus} with score ${candidate.finalScore}. Conservative defaults are applied.`;
+    shortSummary = "Conservative default";
+    severity = "info";
+  }
+
+  return {
+    primaryReasonCode,
+    primaryReasonLabel,
+    explanation,
+    shortSummary,
+    severity,
+    blockingFactors,
+    missingEvidence,
+    positiveFactors,
+    promotionChecklist: checklist,
+  };
+}
+
+export function getCandidateBlockingFactors(candidate: CandidateReviewRecord): string[] {
+  return explainCandidateDecision(candidate).blockingFactors;
+}
+
+export function getCandidatePromotionChecklist(candidate: CandidateReviewRecord): PromotionChecklistItem[] {
+  return explainCandidateDecision(candidate).promotionChecklist;
+}
+
+export function getTopReasonCode(candidates: CandidateReviewRecord[]): CandidateReasonCode | null {
+  if (candidates.length === 0) return null;
+  const counts = new Map<CandidateReasonCode, number>();
+  for (const c of candidates) {
+    const exp = explainCandidateDecision(c);
+    counts.set(exp.primaryReasonCode, (counts.get(exp.primaryReasonCode) ?? 0) + 1);
+  }
+  let topCode: CandidateReasonCode | null = null;
+  let topCount = 0;
+  for (const [code, count] of counts) {
+    if (count > topCount) {
+      topCode = code;
+      topCount = count;
+    }
+  }
+  return topCode;
+}

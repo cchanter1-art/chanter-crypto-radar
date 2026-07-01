@@ -9,6 +9,8 @@ import {
   getCandidateSummary,
   filterCandidates,
   sortCandidates,
+  explainCandidateDecision,
+  getTopReasonCode,
   type CandidateReviewRecord,
   type CandidateStatus,
   type CandidateFilter,
@@ -35,6 +37,18 @@ function formatTimestamp(value: string | null): string {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+const REASON_LABELS: Record<string, string> = {
+  RISK_BLOCKED: "Risk-blocked",
+  LOW_FINAL_SCORE: "Low score",
+  INTEGRITY_BLOCKED: "Integrity blocked",
+  INTEGRITY_STALE: "Stale data",
+  EVIDENCE_MISSING: "Missing evidence",
+  WAIT_DIRECTION: "WAIT direction",
+  REVIEW_READY: "Review ready",
+  WATCH_ONLY: "Watch only",
+  UNKNOWN_CONSERVATIVE: "Conservative",
+};
+
 const FILTER_OPTIONS: CandidateFilter[] = ["ALL", "REVIEW", "WATCH", "STALE", "BLOCKED", "DISMISSED"];
 const SORT_OPTIONS: { value: CandidateSort; label: string }[] = [
   { value: "newest", label: "Newest first" },
@@ -50,8 +64,16 @@ export default function CandidateReviewQueuePanel() {
   const [reviewNotesMap, setReviewNotesMap] = useState<Record<string, string>>({});
   const [dismissReasonMap, setDismissReasonMap] = useState<Record<string, string>>({});
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const summary = useMemo(() => getCandidateSummary(), []);
+
+  const topReason = useMemo(() => {
+    const active = records.filter((r) => r.candidateStatus !== "DISMISSED");
+    const code = getTopReasonCode(active);
+    if (!code) return null;
+    return { code, label: REASON_LABELS[code] ?? code };
+  }, [records]);
 
   const filteredSorted = useMemo(() => {
     const filtered = filterCandidates(records, filter);
@@ -157,6 +179,14 @@ export default function CandidateReviewQueuePanel() {
         </div>
       </div>
 
+      {/* Top reason summary */}
+      {topReason && (
+        <div className="mt-3 rounded-md p-3" style={{ background: "rgba(0,0,0,0.10)" }}>
+          <span className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Most common reason: </span>
+          <span className="text-[10px] font-medium" style={{ color: topReason.code === "REVIEW_READY" ? "#22c55e" : "#f59e0b" }}>{topReason.label}</span>
+        </div>
+      )}
+
       {/* Latest candidate */}
       {summary.latestSymbol && (
         <div className="mt-3 rounded-md p-3" style={{ background: "rgba(0,0,0,0.14)" }}>
@@ -217,56 +247,132 @@ export default function CandidateReviewQueuePanel() {
               </tr>
             </thead>
             <tbody>
-              {filteredSorted.map((record) => (
-                <tr key={record.id} style={{ borderTop: "1px solid rgba(201,215,227,0.04)" }}>
-                  <td className="px-3 py-3 data-mono text-xs" style={{ color: "#9ca3af" }}>{record.symbol}</td>
-                  <td className="px-3 py-3 text-xs uppercase" style={{ color: statusColor(record.candidateStatus) }}>{record.candidateStatus}</td>
-                  <td className="px-3 py-3 data-mono text-xs" style={{ color: scoreColor(record.finalScore) }}>{record.finalScore}</td>
-                  <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{record.direction}</td>
-                  <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{record.evidenceCompleteness}</td>
-                  <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{record.integrityReadiness.replace(/_/g, " ")}</td>
-                  <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{record.riskStatus}</td>
-                  <td className="px-3 py-3 data-mono text-[10px]" style={{ color: "#4b5563" }}>{formatTimestamp(record.latestCandleAt)}</td>
-                  <td className="px-3 py-3 text-[10px]" style={{ color: "#6b7280", maxWidth: 200 }}>{record.reasonSummary}</td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setActiveNoteId(activeNoteId === record.id ? null : record.id)}
-                        className="rounded p-1 transition-colors hover:bg-white/[0.06]"
-                        title="Review / dismiss with notes"
-                      >
-                        <Eye size={13} style={{ color: activeNoteId === record.id ? "#cc9258" : "#4b5563" }} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMarkReviewed(record.id)}
-                        className="rounded p-1 transition-colors hover:bg-white/[0.06]"
-                        title="Mark reviewed"
-                      >
-                        <CheckCircle size={13} style={{ color: record.reviewedAt ? "#22c55e" : "#4b5563" }} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDismiss(record.id)}
-                        className="rounded p-1 transition-colors hover:bg-white/[0.06]"
-                        title="Dismiss"
-                      >
-                        <XCircle size={13} style={{ color: "#4b5563" }} />
-                      </button>
-                    </div>
-                    {record.reviewedAt && (
-                      <p className="mt-1 text-[9px]" style={{ color: "#4b5563" }}>Reviewed {formatTimestamp(record.reviewedAt)}</p>
+              {filteredSorted.map((record) => {
+                const exp = explainCandidateDecision(record);
+                return (
+                  <div key={record.id}>
+                    <tr style={{ borderTop: "1px solid rgba(201,215,227,0.04)" }}>
+                      <td className="px-3 py-3 data-mono text-xs" style={{ color: "#9ca3af" }}>{record.symbol}</td>
+                      <td className="px-3 py-3 text-xs uppercase" style={{ color: statusColor(record.candidateStatus) }}>{record.candidateStatus}</td>
+                      <td className="px-3 py-3 data-mono text-xs" style={{ color: scoreColor(record.finalScore) }}>{record.finalScore}</td>
+                      <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{record.direction}</td>
+                      <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{record.evidenceCompleteness}</td>
+                      <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{record.integrityReadiness.replace(/_/g, " ")}</td>
+                      <td className="px-3 py-3 text-xs" style={{ color: "#9ca3af" }}>{record.riskStatus}</td>
+                      <td className="px-3 py-3 data-mono text-[10px]" style={{ color: "#4b5563" }}>{formatTimestamp(record.latestCandleAt)}</td>
+                      <td className="px-3 py-3 text-[10px]" style={{ color: exp.severity === "blocked" ? "#ef4444" : exp.severity === "warning" ? "#f59e0b" : "#22c55e", maxWidth: 180 }}>{exp.shortSummary}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(expandedId === record.id ? null : record.id)}
+                            className="rounded p-1 transition-colors hover:bg-white/[0.06]"
+                            title="Toggle explanation"
+                          >
+                            <Eye size={13} style={{ color: expandedId === record.id ? "#cc9258" : "#4b5563" }} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveNoteId(activeNoteId === record.id ? null : record.id)}
+                            className="rounded p-1 transition-colors hover:bg-white/[0.06]"
+                            title="Review / dismiss with notes"
+                          >
+                            <ListChecks size={13} style={{ color: activeNoteId === record.id ? "#cc9258" : "#4b5563" }} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMarkReviewed(record.id)}
+                            className="rounded p-1 transition-colors hover:bg-white/[0.06]"
+                            title="Mark reviewed"
+                          >
+                            <CheckCircle size={13} style={{ color: record.reviewedAt ? "#22c55e" : "#4b5563" }} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDismiss(record.id)}
+                            className="rounded p-1 transition-colors hover:bg-white/[0.06]"
+                            title="Dismiss"
+                          >
+                            <XCircle size={13} style={{ color: "#4b5563" }} />
+                          </button>
+                        </div>
+                        {record.reviewedAt && (
+                          <p className="mt-1 text-[9px]" style={{ color: "#4b5563" }}>Reviewed {formatTimestamp(record.reviewedAt)}</p>
+                        )}
+                        {record.reviewNotes && (
+                          <p className="text-[9px]" style={{ color: "#6b7280" }}>{record.reviewNotes}</p>
+                        )}
+                        {record.dismissReason && (
+                          <p className="text-[9px]" style={{ color: "#6b7280" }}>Dismissed: {record.dismissReason}</p>
+                        )}
+                      </td>
+                    </tr>
+                    {expandedId === record.id && (
+                      <tr style={{ borderTop: "1px solid rgba(204,146,88,0.10)" }}>
+                        <td colSpan={10} className="px-4 py-3" style={{ background: "rgba(0,0,0,0.08)" }}>
+                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            <div>
+                              <p className="text-[9px] uppercase tracking-[0.06em] mb-1" style={{ color: "#4b5563" }}>Primary Reason</p>
+                              <p className="text-xs font-medium" style={{ color: exp.severity === "blocked" ? "#ef4444" : exp.severity === "warning" ? "#f59e0b" : "#22c55e" }}>{exp.primaryReasonLabel}</p>
+                              <p className="mt-1 text-[10px] leading-4" style={{ color: "#6b7280" }}>{exp.explanation}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase tracking-[0.06em] mb-1" style={{ color: "#4b5563" }}>Blocking Factors</p>
+                              {exp.blockingFactors.length > 0 ? (
+                                exp.blockingFactors.map((f, i) => <p key={i} className="text-[10px]" style={{ color: "#ef4444" }}>- {f}</p>)
+                              ) : (
+                                <p className="text-[10px]" style={{ color: "#4b5563" }}>None</p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase tracking-[0.06em] mb-1" style={{ color: "#4b5563" }}>Missing Evidence</p>
+                              {exp.missingEvidence.length > 0 ? (
+                                exp.missingEvidence.map((f, i) => <p key={i} className="text-[10px]" style={{ color: "#f59e0b" }}>- {f}</p>)
+                              ) : (
+                                <p className="text-[10px]" style={{ color: "#4b5563" }}>None</p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase tracking-[0.06em] mb-1" style={{ color: "#4b5563" }}>Positive Factors</p>
+                              {exp.positiveFactors.length > 0 ? (
+                                exp.positiveFactors.map((f, i) => <p key={i} className="text-[10px]" style={{ color: "#22c55e" }}>- {f}</p>)
+                              ) : (
+                                <p className="text-[10px]" style={{ color: "#4b5563" }}>None</p>
+                              )}
+                            </div>
+                            <div className="sm:col-span-2">
+                              <p className="text-[9px] uppercase tracking-[0.06em] mb-1" style={{ color: "#4b5563" }}>Promotion Checklist (to reach REVIEW)</p>
+                              <div className="grid gap-1 sm:grid-cols-2">
+                                {exp.promotionChecklist.map((item, i) => (
+                                  <div key={i} className="flex items-start gap-1.5">
+                                    <span className="text-[10px]" style={{ color: item.passed ? "#22c55e" : "#ef4444" }}>{item.passed ? "[x]" : "[ ]"}</span>
+                                    <div>
+                                      <p className="text-[10px]" style={{ color: "#9ca3af" }}>{item.label}</p>
+                                      <p className="text-[9px]" style={{ color: "#4b5563" }}>{item.detail}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-4 rounded p-2" style={{ background: "rgba(0,0,0,0.10)" }}>
+                            <span className="text-[10px] data-mono" style={{ color: "#9ca3af" }}>Base: {record.baseScore}</span>
+                            <span className="text-[10px] data-mono" style={{ color: record.evidenceModifier >= 0 ? "#22c55e" : "#ef4444" }}>Modifier: {record.evidenceModifier >= 0 ? "+" : ""}{record.evidenceModifier}</span>
+                            <span className="text-[10px] data-mono" style={{ color: scoreColor(record.finalScore) }}>Final: {record.finalScore}</span>
+                            <span className="text-[10px] data-mono" style={{ color: "#4b5563" }}>Integrity: {record.integrityScore}/100</span>
+                            <span className="text-[10px]" style={{ color: "#4b5563" }}>Readiness: {record.integrityReadiness.replace(/_/g, " ")}</span>
+                            <span className="text-[10px]" style={{ color: "#4b5563" }}>Risk: {record.riskStatus}</span>
+                            <span className="text-[10px]" style={{ color: "#4b5563" }}>Evidence: {record.evidenceCompleteness}</span>
+                            {record.evidenceCapsApplied.length > 0 && (
+                              <span className="text-[10px]" style={{ color: "#f59e0b" }}>Caps: {record.evidenceCapsApplied.join(", ")}</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                    {record.reviewNotes && (
-                      <p className="text-[9px]" style={{ color: "#6b7280" }}>{record.reviewNotes}</p>
-                    )}
-                    {record.dismissReason && (
-                      <p className="text-[9px]" style={{ color: "#6b7280" }}>Dismissed: {record.dismissReason}</p>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                  </div>
+                );
+              })}
             </tbody>
           </table>
         </div>
