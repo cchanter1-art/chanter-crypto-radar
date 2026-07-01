@@ -47,6 +47,7 @@ import { buildOpportunityRankings } from "@/lib/opportunityRanking";
 import {
   loadPaperOutcomeHistory,
   buildPaperOutcomeSummary,
+  getBestOutcomeSymbol,
 } from "@/lib/paperOutcomeTracker";
 import { loadCandidateReviewQueue } from "@/lib/candidateReviewQueue";
 import {
@@ -289,6 +290,7 @@ function createLocalSnapshot() {
     scenario: loadFuturesTestScenario(),
     candidateSummary: getCandidateSummary(),
     paperOutcomeSummary: buildPaperOutcomeSummary(loadPaperOutcomeHistory()),
+    bestOutcomeSymbol: getBestOutcomeSymbol(loadPaperOutcomeHistory())?.symbol ?? null,
     topOpportunity: (() => {
       const candidates = loadCandidateReviewQueue();
       const rankings = buildOpportunityRankings(candidates);
@@ -930,7 +932,7 @@ export default function CommandCenterDashboard() {
           <SectionCard
             id="paper-outcome-title"
             title="Paper Outcome Proof"
-            subtitle={localSnapshot.paperOutcomeSummary.total > 0 ? localSnapshot.paperOutcomeSummary.total + " tracked -- " + (localSnapshot.paperOutcomeSummary.measurable > 0 ? localSnapshot.paperOutcomeSummary.winRate.toFixed(0) + "% win" : "no measurable") : "No outcome proof yet."}
+            subtitle={localSnapshot.paperOutcomeSummary.total > 0 ? localSnapshot.paperOutcomeSummary.total + " tracked -- " + (localSnapshot.paperOutcomeSummary.measurable > 0 ? localSnapshot.paperOutcomeSummary.winRate.toFixed(0) + "% win" : "no measurable") + (localSnapshot.bestOutcomeSymbol ? " -- best: " + localSnapshot.bestOutcomeSymbol : "") : "No outcome proof yet."}
             icon={<Activity size={17} />}
             badge={localSnapshot.paperOutcomeSummary.total > 0 ? String(localSnapshot.paperOutcomeSummary.pending) + " pending" : "Empty"}
           >
@@ -957,14 +959,14 @@ export default function CommandCenterDashboard() {
                   detail="Awaiting horizon"
                 />
                 <Metric
-                  label="Blocked/NA"
-                  value={String(localSnapshot.paperOutcomeSummary.blocked + localSnapshot.paperOutcomeSummary.noAction)}
-                  detail={localSnapshot.paperOutcomeSummary.unavailable + " unavailable"}
+                  label="Resolved"
+                  value={String(localSnapshot.paperOutcomeSummary.measurable)}
+                  detail={localSnapshot.paperOutcomeSummary.pending + " pending"}
                 />
                 <Metric
-                  label="Avg move"
-                  value={localSnapshot.paperOutcomeSummary.avgChangePct !== null ? localSnapshot.paperOutcomeSummary.avgChangePct.toFixed(2) + "%" : "--"}
-                  detail="Across all tracked"
+                  label="Best symbol"
+                  value={localSnapshot.bestOutcomeSymbol ?? "--"}
+                  detail={localSnapshot.paperOutcomeSummary.avgChangePct !== null ? "Avg " + localSnapshot.paperOutcomeSummary.avgChangePct.toFixed(2) + "%" : "No avg"}
                 />
               </div>
             ) : (

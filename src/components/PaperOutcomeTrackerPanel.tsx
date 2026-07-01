@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Activity, TrendingUp, TrendingDown, Minus, Clock, Ban, AlertCircle } from "lucide-react";
 import {
   loadPaperOutcomeHistory,
@@ -7,6 +7,7 @@ import {
   sortPaperOutcomes,
   type OutcomeResult,
   type OutcomeFilter,
+  buildPaperOutcomeSymbolSummary,
 } from "@/lib/paperOutcomeTracker";
 
 function outcomeColor(outcome: OutcomeResult): string {
@@ -33,8 +34,42 @@ function outcomeIcon(outcome: OutcomeResult, size = 12) {
 const FILTERS: (OutcomeFilter)[] = ["ALL", "WIN", "LOSS", "FLAT", "PENDING", "NO_ACTION", "BLOCKED", "UNAVAILABLE"];
 
 export default function PaperOutcomeTrackerPanel() {
-  const records = useMemo(() => loadPaperOutcomeHistory(), []);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState(() => new Date().toISOString());
+
+  const refresh = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+    setLastRefreshed(new Date().toISOString());
+  }, []);
+
+  // Refresh on visibility/focus
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", handler);
+    window.addEventListener("focus", handler);
+    return () => {
+      document.removeEventListener("visibilitychange", handler);
+      window.removeEventListener("focus", handler);
+    };
+  }, [refresh]);
+
+  // Refresh on storage event from other tabs
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === "chanter-paper-outcome-history") refresh();
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, [refresh]);
+
+  const records = useMemo(() => {
+    void refreshKey; // trigger re-read on refresh
+    return loadPaperOutcomeHistory();
+  }, [refreshKey]);
   const summary = useMemo(() => buildPaperOutcomeSummary(records), [records]);
+  const symbolSummaries = useMemo(() => buildPaperOutcomeSymbolSummary(records), [records]);
   const [filter, setFilter] = useState<OutcomeFilter>("ALL");
 
   const filtered = useMemo(() => {
@@ -189,6 +224,43 @@ export default function PaperOutcomeTrackerPanel() {
           <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Start the Auto Intelligence Cycle and wait for candidates to mature.</p>
         </div>
       )}
+
+      {/* Per-symbol summary table */}
+      {symbolSummaries.length > 0 && (
+        <div className="mt-6">
+          <p className="mb-2 text-[10px] uppercase tracking-[0.06em]" style={{ color: "#4b5563" }}>Per-Symbol Summary</p>
+          <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(201,215,227,0.05)" }}>
+            <table className="w-full min-w-[600px] border-collapse text-left">
+              <thead style={{ backgroundColor: "#090d13" }}>
+                <tr>
+                  {["Symbol", "Total", "Win rate", "Avg move", "Pending", "Latest outcome"].map((h) => (
+                    <th key={h} className="px-3 py-3 label-upper" style={{ color: "#4b5563", fontSize: 9 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {symbolSummaries.map((s) => (
+                  <tr key={s.symbol} style={{ borderTop: "1px solid rgba(201,215,227,0.04)" }}>
+                    <td className="px-3 py-3 data-mono text-xs" style={{ color: "#9ca3af" }}>{s.symbol}</td>
+                    <td className="px-3 py-3 data-mono text-xs" style={{ color: "#9ca3af" }}>{s.total}</td>
+                    <td className="px-3 py-3 data-mono text-xs" style={{ color: s.measurableWinRate >= 50 ? "#22c55e" : "#f59e0b" }}>
+                      {s.measurable > 0 ? s.measurableWinRate.toFixed(1) + "%" : "--"}
+                    </td>
+                    <td className="px-3 py-3 data-mono text-xs" style={{ color: "#9ca3af" }}>
+                      {s.averageMovePct !== null ? s.averageMovePct.toFixed(2) + "%" : "--"}
+                    </td>
+                    <td className="px-3 py-3 data-mono text-xs" style={{ color: "#f59e0b" }}>{s.pending}</td>
+                    <td className="px-3 py-3 text-[10px]" style={{ color: "#6b7280" }}>{s.latestOutcomeAt ?? "--"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Last refreshed */}
+      <p className="mt-3 text-[10px]" style={{ color: "#4b5563" }}>Last refreshed: {new Date(lastRefreshed).toLocaleTimeString()}</p>
     </section>
   );
 }

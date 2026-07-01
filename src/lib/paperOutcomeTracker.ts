@@ -36,6 +36,22 @@ export type OutcomeFilter =
   | "BLOCKED"
   | "UNAVAILABLE";
 
+export interface PaperOutcomeSymbolSummary {
+  symbol: string;
+  total: number;
+  wins: number;
+  losses: number;
+  flat: number;
+  blocked: number;
+  noAction: number;
+  pending: number;
+  unavailable: number;
+  measurable: number;
+  measurableWinRate: number;
+  averageMovePct: number | null;
+  latestOutcomeAt: string | null;
+}
+
 export interface PaperOutcomeRecord {
   id: string;
   sourceCandidateId: string;
@@ -652,4 +668,87 @@ export function getTopOutcomeStats(
   records: PaperOutcomeRecord[],
 ): PaperOutcomeSummary {
   return buildPaperOutcomeSummary(records);
+}
+
+// === Per-symbol summary ===
+
+export function buildPaperOutcomeSymbolSummary(
+  records: PaperOutcomeRecord[],
+): PaperOutcomeSymbolSummary[] {
+  const bySymbol = new Map<string, PaperOutcomeRecord[]>();
+  for (const r of records) {
+    const list = bySymbol.get(r.symbol) ?? [];
+    list.push(r);
+    bySymbol.set(r.symbol, list);
+  }
+  const summaries: PaperOutcomeSymbolSummary[] = [];
+  for (const [symbol, recs] of bySymbol) {
+    let wins = 0, losses = 0, flat = 0, blocked = 0, noAction = 0, pending = 0, unavailable = 0;
+    let changeSum = 0, changeCount = 0;
+    let latestAt: string | null = null;
+    for (const r of recs) {
+      switch (r.outcomeStatus) {
+        case "WIN": wins++; break;
+        case "LOSS": losses++; break;
+        case "FLAT": flat++; break;
+        case "BLOCKED": blocked++; break;
+        case "NO_ACTION": noAction++; break;
+        case "PENDING": pending++; break;
+        case "UNAVAILABLE": unavailable++; break;
+      }
+      if (r.changePct !== null) {
+        changeSum += r.changePct;
+        changeCount++;
+      }
+      if (r.updatedAt && (!latestAt || r.updatedAt > latestAt)) {
+        latestAt = r.updatedAt;
+      }
+    }
+    const measurable = wins + losses + flat;
+    summaries.push({
+      symbol,
+      total: recs.length,
+      wins,
+      losses,
+      flat,
+      blocked,
+      noAction,
+      pending,
+      unavailable,
+      measurable,
+      measurableWinRate: measurable > 0 ? (wins / measurable) * 100 : 0,
+      averageMovePct: changeCount > 0 ? changeSum / changeCount : null,
+      latestOutcomeAt: latestAt,
+    });
+  }
+  // Sort by measurableWinRate desc, then total desc
+  summaries.sort((a, b) => {
+    if (b.measurableWinRate !== a.measurableWinRate) return b.measurableWinRate - a.measurableWinRate;
+    if (b.total !== a.total) return b.total - a.total;
+    return a.symbol.localeCompare(b.symbol);
+  });
+  return summaries;
+}
+
+export function getBestOutcomeSymbol(
+  records: PaperOutcomeRecord[],
+): PaperOutcomeSymbolSummary | null {
+  const summaries = buildPaperOutcomeSymbolSummary(records);
+  if (summaries.length === 0) return null;
+  // Best = highest measurable win rate with at least 1 measurable outcome
+  const measurable = summaries.filter((s) => s.measurable > 0);
+  if (measurable.length > 0) return measurable[0];
+  // Fallback: most total records
+  return summaries[0];
+}
+
+export function getWorstOutcomeSymbol(
+  records: PaperOutcomeRecord[],
+): PaperOutcomeSymbolSummary | null {
+  const summaries = buildPaperOutcomeSymbolSummary(records);
+  if (summaries.length === 0) return null;
+  // Worst = lowest measurable win rate with at least 1 measurable outcome
+  const measurable = summaries.filter((s) => s.measurable > 0);
+  if (measurable.length > 0) return measurable[measurable.length - 1];
+  return summaries[summaries.length - 1];
 }

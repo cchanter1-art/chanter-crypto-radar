@@ -66,6 +66,11 @@ import {
   normalizeCandidateReviewRecord,
   type CandidateReviewRecord,
 } from "@/lib/candidateReviewQueue";
+import {
+  normalizePaperOutcomeRecord,
+  MAX_PAPER_OUTCOME_RECORDS,
+  type PaperOutcomeRecord,
+} from "@/lib/paperOutcomeTracker";
 import { isValidPaperTrade } from "@/lib/paperTradeUtils";
 import type { AppSettings, AppState, PaperTrade, PriceAlert } from "@/types";
 
@@ -111,6 +116,7 @@ export interface LocalDataBackup {
   marketDataIntegrityHistory: MarketDataIntegrityReport[];
   autoIntelligenceCycleState: AutoIntelligenceCycleState;
   candidateReviewQueue: CandidateReviewRecord[];
+  paperOutcomeHistory: PaperOutcomeRecord[];
   settings: AppSettings;
 }
 
@@ -132,6 +138,7 @@ export interface ImportedLocalDataBackup {
   marketDataIntegrityHistory: MarketDataIntegrityReport[];
   autoIntelligenceCycleState: AutoIntelligenceCycleState;
   candidateReviewQueue: CandidateReviewRecord[];
+  paperOutcomeHistory: PaperOutcomeRecord[];
 }
 
 type ValidationResult<T> =
@@ -572,6 +579,9 @@ function validateAutoIntelligenceCycleState(
         signalRecordsSkipped: 0,
         candidatesCreated: 0,
         candidatesSkipped: 0,
+    outcomesUpdated: 0,
+    outcomesSkipped: 0,
+    outcomesResolved: 0,
         autoObservations: [],
         history: [],
       },
@@ -656,10 +666,14 @@ export function createLocalDataBackup(
     signalRecordsSkipped: 0,
     candidatesCreated: 0,
     candidatesSkipped: 0,
+    outcomesUpdated: 0,
+    outcomesSkipped: 0,
+    outcomesResolved: 0,
     autoObservations: [],
     history: [],
   },
   candidateReviewQueue: CandidateReviewRecord[] = [],
+  paperOutcomeHistory: PaperOutcomeRecord[] = [],
 ): LocalDataBackup {
   return {
     version: BACKUP_SCHEMA_VERSION,
@@ -745,6 +759,9 @@ export function createLocalDataBackup(
       signalRecordsSkipped: 0,
       candidatesCreated: 0,
       candidatesSkipped: 0,
+    outcomesUpdated: 0,
+    outcomesSkipped: 0,
+    outcomesResolved: 0,
       autoObservations: [],
       history: [],
     },
@@ -752,6 +769,10 @@ export function createLocalDataBackup(
       .map(normalizeCandidateReviewRecord)
       .filter((r): r is CandidateReviewRecord => r !== null)
       .slice(0, 200),
+    paperOutcomeHistory: paperOutcomeHistory
+      .map(normalizePaperOutcomeRecord)
+      .filter((r): r is PaperOutcomeRecord => r !== null)
+      .slice(0, MAX_PAPER_OUTCOME_RECORDS),
     settings: { ...state.settings },
   };
 }
@@ -883,6 +904,14 @@ export function parseLocalDataBackup(
         .slice(0, 200)
     : [];
 
+  // Validate paper outcome history (optional for backward compat)
+  const paperOutcomeHistory: PaperOutcomeRecord[] = Array.isArray(parsed.paperOutcomeHistory)
+    ? parsed.paperOutcomeHistory
+        .map(normalizePaperOutcomeRecord)
+        .filter((r): r is PaperOutcomeRecord => r !== null)
+        .slice(0, MAX_PAPER_OUTCOME_RECORDS)
+    : [];
+
   const settings = validateSettings(parsed.settings);
   if (settings.ok === false) {
     return { ok: false, message: `Import failed. ${settings.message}` };
@@ -913,6 +942,7 @@ export function parseLocalDataBackup(
       marketDataIntegrityHistory: marketDataIntegrityHistory.value,
       autoIntelligenceCycleState: autoIntelligenceCycleState.value,
       candidateReviewQueue,
+      paperOutcomeHistory,
     },
   };
 }

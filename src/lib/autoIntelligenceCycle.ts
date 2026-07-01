@@ -26,6 +26,11 @@ import {
   addOrUpdateCandidate,
 } from "@/lib/candidateReviewQueue";
 import {
+  updatePaperOutcomeRecord,
+  loadPaperOutcomeHistory,
+  savePaperOutcomeHistory,
+} from "@/lib/paperOutcomeTracker";
+import {
   loadSignalQualityHistory,
   saveSignalQualityHistory,
   createSignalQualityRecord,
@@ -85,6 +90,9 @@ export interface AutoIntelligenceCycleState {
   signalRecordsSkipped: number;
   candidatesCreated: number;
   candidatesSkipped: number;
+  outcomesUpdated: number;
+  outcomesSkipped: number;
+  outcomesResolved: number;
   history: AutoIntelligenceCycleRunRecord[];
   autoObservations: AutoObservationRecord[];
 }
@@ -123,6 +131,9 @@ function getDefaultState(): AutoIntelligenceCycleState {
     signalRecordsSkipped: 0,
     candidatesCreated: 0,
     candidatesSkipped: 0,
+    outcomesUpdated: 0,
+    outcomesSkipped: 0,
+    outcomesResolved: 0,
     history: [],
     autoObservations: [],
   };
@@ -221,6 +232,12 @@ export function normalizeAutoIntelligenceCycleState(
   if (typeof candidatesCreated !== "number" || !Number.isFinite(candidatesCreated) || candidatesCreated < 0) return null;
   const candidatesSkipped = v.candidatesSkipped;
   if (typeof candidatesSkipped !== "number" || !Number.isFinite(candidatesSkipped) || candidatesSkipped < 0) return null;
+  const outcomesUpdated = v.outcomesUpdated;
+  if (typeof outcomesUpdated !== "number" || !Number.isFinite(outcomesUpdated) || outcomesUpdated < 0) return null;
+  const outcomesSkipped = v.outcomesSkipped;
+  if (typeof outcomesSkipped !== "number" || !Number.isFinite(outcomesSkipped) || outcomesSkipped < 0) return null;
+  const outcomesResolved = v.outcomesResolved;
+  if (typeof outcomesResolved !== "number" || !Number.isFinite(outcomesResolved) || outcomesResolved < 0) return null;
   if (!Array.isArray(v.history)) return null;
   const history = v.history.map(normalizeRunRecord).filter(
     (r): r is AutoIntelligenceCycleRunRecord => r !== null,
@@ -253,6 +270,9 @@ export function normalizeAutoIntelligenceCycleState(
     signalRecordsSkipped: signalRecordsSkipped,
     candidatesCreated: candidatesCreated,
     candidatesSkipped: candidatesSkipped,
+    outcomesUpdated: outcomesUpdated,
+    outcomesSkipped: outcomesSkipped,
+    outcomesResolved: outcomesResolved,
     history: history.slice(0, MAX_CYCLE_HISTORY),
     autoObservations: autoObservations,
   };
@@ -360,7 +380,11 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
     let signalRecordsSkipped = 0;
     let candidatesCreated = 0;
     let candidatesSkipped = 0;
+    let outcomesUpdated = 0;
+    let outcomesSkipped = 0;
+    let outcomesResolved = 0;
     let currentAutoObservations = [...getAutoIntelligenceCycleState().autoObservations];
+    const candlesBySymbolMap = new Map<string, Array<{ close: number; timestamp: string }>>();
 
     for (const symbol of TRACKED_SYMBOLS) {
       const result = await fetchLive15mCandles({ symbol, limit: 100 });
@@ -374,6 +398,7 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
         continue;
       }
 
+      candlesBySymbolMap.set(symbol, result.candles);
       const report = runIntegrityCheckForLive(symbol, result.candles, result.fetchedAt);
       const history = loadMarketDataIntegrityHistory();
       const updated = [report, ...history.filter((r) => r.id !== report.id)];
@@ -502,6 +527,9 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
       signalRecordsSkipped,
       candidatesCreated,
       candidatesSkipped,
+      outcomesUpdated,
+      outcomesSkipped,
+      outcomesResolved,
       history: newHistory,
       autoObservations: currentAutoObservations,
     });
@@ -550,6 +578,43 @@ export async function runAutoIntelligenceTick(): Promise<{ ok: boolean; error?: 
         }
       } catch {
         // Candidate creation is best-effort; never block the tick
+      }
+
+      // === Paper Outcome Tracker: update existing outcomes with latest price ===
+      try {
+        const priceBySymbol = new Map<string, { price: number; time: string }>();
+        for (const [sym, candles] of candlesBySymbolMap) {
+          if (candles.length > 0) {
+            const last = candles[candles.length - 1];
+            priceBySymbol.set(sym, { price: last.close, time: last.timestamp });
+          }
+        }
+        const existingOutcomes = loadPaperOutcomeHistory();
+        const updatedOutcomes = [...existingOutcomes];
+        for (let i = 0; i < updatedOutcomes.length; i++) {
+          const record = updatedOutcomes[i];
+          if (record.outcomeStatus === "BLOCKED" || record.outcomeStatus === "NO_ACTION") {
+            outcomesSkipped += 1;
+            continue;
+          }
+          const md = priceBySymbol.get(record.symbol);
+          if (!md) {
+            outcomesSkipped += 1;
+            continue;
+          }
+          const prevStatus = record.outcomeStatus;
+          const updated = updatePaperOutcomeRecord(record, md);
+          updatedOutcomes[i] = updated;
+          outcomesUpdated += 1;
+          if (updated.outcomeStatus !== prevStatus && updated.outcomeStatus !== "PENDING" && updated.outcomeStatus !== "UNAVAILABLE") {
+            outcomesResolved += 1;
+          }
+        }
+        if (outcomesUpdated > 0) {
+          savePaperOutcomeHistory(updatedOutcomes);
+        }
+      } catch {
+        // Outcome updates are best-effort; never block the tick
       }
     }
 

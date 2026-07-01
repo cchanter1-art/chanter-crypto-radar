@@ -340,8 +340,192 @@ try {
     assert.equal(top.length, 0);
   }
 
+
+  // 19. Per-symbol summary computes win rate correctly
+  {
+    store.clear();
+    const cand1 = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const cand2 = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83, createdAt: "2026-01-01T01:00:00.000Z" });
+    const cand3 = makeCandidate({ symbol: "ETHUSDT", direction: "SHORT", finalScore: 83 });
+    const r1 = tracker.buildPaperOutcomeRecord(cand1, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    const r2 = tracker.buildPaperOutcomeRecord(cand2, { price: 50000, time: "2026-01-01T01:00:00.000Z" });
+    const r3 = tracker.buildPaperOutcomeRecord(cand3, { price: 3000, time: "2026-01-01T00:00:00.000Z" });
+    const u1 = updateWithElapsed(r1, 51000, 20 * 60 * 1000); // WIN
+    const u2 = updateWithElapsed(r2, 49000, 20 * 60 * 1000); // LOSS
+    const u3 = updateWithElapsed(r3, 2940, 20 * 60 * 1000); // WIN (SHORT, price down)
+    const summaries = tracker.buildPaperOutcomeSymbolSummary([u1, u2, u3]);
+    assert.equal(summaries.length, 2, "Should have 2 symbol summaries");
+    const btc = summaries.find((s) => s.symbol === "BTCUSDT");
+    assert.ok(btc, "Must have BTCUSDT summary");
+    assert.equal(btc.total, 2);
+    assert.equal(btc.wins, 1);
+    assert.equal(btc.losses, 1);
+    assert.equal(btc.measurable, 2);
+    assert.ok(btc.measurableWinRate === 50, "BTC win rate should be 50%");
+    const eth = summaries.find((s) => s.symbol === "ETHUSDT");
+    assert.equal(eth.wins, 1);
+    assert.equal(eth.measurableWinRate, 100);
+  }
+
+  // 20. Best/worst symbol functions are deterministic
+  {
+    store.clear();
+    const cand1 = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const cand2 = makeCandidate({ symbol: "ETHUSDT", direction: "SHORT", finalScore: 83 });
+    const r1 = tracker.buildPaperOutcomeRecord(cand1, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    const r2 = tracker.buildPaperOutcomeRecord(cand2, { price: 3000, time: "2026-01-01T00:00:00.000Z" });
+    const u1 = updateWithElapsed(r1, 51000, 20 * 60 * 1000); // WIN
+    const u2 = updateWithElapsed(r2, 3060, 20 * 60 * 1000); // LOSS (SHORT, price up)
+    const records = [u1, u2];
+    const best = tracker.getBestOutcomeSymbol(records);
+    const worst = tracker.getWorstOutcomeSymbol(records);
+    assert.ok(best, "Must return best symbol");
+    assert.ok(worst, "Must return worst symbol");
+    assert.equal(best.symbol, "BTCUSDT", "Best should be BTCUSDT (100% win rate)");
+    assert.equal(worst.symbol, "ETHUSDT", "Worst should be ETHUSDT (0% win rate)");
+    // Deterministic
+    const best2 = tracker.getBestOutcomeSymbol(records);
+    assert.equal(best2.symbol, best.symbol, "Must be deterministic");
+  }
+
+  // 21. Blocked/NO_ACTION/PENDING/UNAVAILABLE excluded from measurable win rate
+  {
+    store.clear();
+    const cand1 = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const cand2 = makeCandidate({ symbol: "BTCUSDT", direction: "WAIT", finalScore: 68, completeness: "partial", hasAutoObs: false, hasForward: false, hasBacktest: false, missingFactors: ["auto obs"], positiveFactors: [] });
+    const r1 = tracker.buildPaperOutcomeRecord(cand1, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    const r2 = tracker.buildPaperOutcomeRecord(cand2, { price: 100, time: "2026-01-01T00:00:00.000Z" });
+    const u1 = updateWithElapsed(r1, 51000, 20 * 60 * 1000); // WIN
+    const records = [u1, r2]; // r2 is NO_ACTION
+    const summary = tracker.buildPaperOutcomeSymbolSummary(records);
+    const btc = summary[0];
+    assert.equal(btc.total, 2);
+    assert.equal(btc.measurable, 1, "Only WIN/LOSS/FLAT count as measurable");
+    assert.equal(btc.noAction, 1);
+    assert.equal(btc.measurableWinRate, 100, "Win rate based on measurable only");
+  }
+
+  // 22. Export includes paperOutcomeHistory (simulated)
+  {
+    store.clear();
+    const cand = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const r = tracker.buildPaperOutcomeRecord(cand, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    let history = [];
+    history = tracker.addOrUpdatePaperOutcome(history, r);
+    tracker.savePaperOutcomeHistory(history);
+    const loaded = tracker.loadPaperOutcomeHistory();
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].symbol, "BTCUSDT");
+    // Simulate export: check that JSON round-trips
+    const json = JSON.stringify(loaded);
+    const parsed = JSON.parse(json);
+    assert.ok(Array.isArray(parsed));
+    assert.equal(parsed[0].id, r.id);
+  }
+
+  // 23. Old backup without paperOutcomeHistory still works
+  {
+    store.clear();
+    // Simulate old backup data: no paperOutcomeHistory key
+    store.set("chanter-paper-outcome-history", JSON.stringify(null));
+    const loaded = tracker.loadPaperOutcomeHistory();
+    assert.equal(loaded.length, 0, "Null data should return empty");
+    store.delete("chanter-paper-outcome-history");
+    const loaded2 = tracker.loadPaperOutcomeHistory();
+    assert.equal(loaded2.length, 0, "Missing key should return empty");
+  }
+
+  // 24. Malformed imported outcomes rejected safely
+  {
+    store.clear();
+    store.set("chanter-paper-outcome-history", JSON.stringify([
+      { garbage: true },
+      null,
+      42,
+      "string",
+      { id: "ok", sourceCandidateId: "c1", symbol: "BTCUSDT", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", outcome15m: "WIN", outcome1h: "PENDING", outcome4h: "PENDING", outcomeStatus: "WIN", outcomeSummary: "test" },
+    ]));
+    const loaded = tracker.loadPaperOutcomeHistory();
+    assert.ok(loaded.length <= 1, "Malformed records rejected");
+    assert.ok(loaded.every((r) => r.symbol !== undefined), "All loaded records valid");
+  }
+
+  // 25. Cap at 500 records
+  {
+    store.clear();
+    const records = [];
+    for (let i = 0; i < 550; i++) {
+      records.push({
+        id: "outcome-" + i,
+        sourceCandidateId: "cand-" + i,
+        symbol: "BTCUSDT",
+        timeframe: "15m",
+        direction: "LONG",
+        action: "REVIEW",
+        candidateStatus: "REVIEW",
+        reasonCode: "REVIEW_READY",
+        reasonSummary: "test",
+        rankScore: 83,
+        finalScore: 83,
+        evidenceCompleteness: "complete",
+        integrityScore: 90,
+        integrityReadiness: "ready",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        baselinePrice: 50000,
+        baselineTime: "2026-01-01T00:00:00.000Z",
+        latestPrice: 50000,
+        latestTime: "2026-01-01T00:00:00.000Z",
+        changePct: 0,
+        maxFavorablePct: 0,
+        maxAdversePct: 0,
+        outcome15m: "PENDING",
+        outcome1h: "PENDING",
+        outcome4h: "PENDING",
+        outcomeStatus: "PENDING",
+        outcomeSummary: "test",
+      });
+    }
+    tracker.savePaperOutcomeHistory(records);
+    const loaded = tracker.loadPaperOutcomeHistory();
+    assert.equal(loaded.length, 500, "Should cap at 500 records");
+  }
+
+  // 26. No execution/order/position fields in per-symbol summary
+  {
+    store.clear();
+    const cand = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const r = tracker.buildPaperOutcomeRecord(cand, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    const u = updateWithElapsed(r, 51000, 20 * 60 * 1000);
+    const summaries = tracker.buildPaperOutcomeSymbolSummary([u]);
+    const json = JSON.stringify(summaries[0]);
+    const forbidden = ["tradeId", "orderId", "positionId", "execution", "buy", "sell", "openPosition"];
+    for (const field of forbidden) {
+      assert.ok(!json.includes('"' + field + '"'), "Symbol summary must not contain: " + field);
+    }
+  }
+
+  // 27. getBestOutcomeSymbol returns null for empty records
+  {
+    store.clear();
+    const best = tracker.getBestOutcomeSymbol([]);
+    assert.equal(best, null);
+    const worst = tracker.getWorstOutcomeSymbol([]);
+    assert.equal(worst, null);
+  }
+
+  // 28. updatePaperOutcomeRecord does not fabricate data on null market data
+  {
+    store.clear();
+    const cand = makeCandidate({ symbol: "BTCUSDT", direction: "LONG", finalScore: 83 });
+    const r = tracker.buildPaperOutcomeRecord(cand, { price: 50000, time: "2026-01-01T00:00:00.000Z" });
+    const updated = tracker.updatePaperOutcomeRecord(r, null);
+    assert.equal(updated.outcomeStatus, r.outcomeStatus, "Null market data should not change status");
+    assert.equal(updated.latestPrice, r.latestPrice, "Null market data should not change price");
+  }
+
   console.log(
-    "Paper Outcome Tracker v1 verification passed: LONG win/loss, SHORT win/loss, " +
+    "Paper Outcome Tracker v1.1 verification passed: LONG win/loss, SHORT win/loss, " +
     "WAIT=NO_ACTION, BLOCKED stays BLOCKED, missing baseline=UNAVAILABLE, " +
     "not enough time=PENDING, flat move=FLAT, no duplicates, malformed safe, " +
     "backward compatible, no execution fields, summary correct, filter/sort work, " +
