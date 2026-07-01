@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
+  Crosshair,
   AlertTriangle,
   BarChart3,
   Clock3,
@@ -44,6 +45,11 @@ import { loadLatestMarketDataIntegrity } from "@/lib/marketDataIntegrity";
 import { getAutoIntelligenceCycleState, getStaleWarning, isAutoIntelligenceCycleActive, getLatestAutoObservation } from "@/lib/autoIntelligenceCycle";
 import { getCandidateSummary } from "@/lib/candidateReviewQueue";
 import { buildOpportunityRankings } from "@/lib/opportunityRanking";
+import {
+  buildDecisionDashboardSnapshot,
+  getDecisionActionLabel,
+  getDecisionProofSummary,
+} from "@/lib/decisionDashboard";
 import {
   loadPaperOutcomeHistory,
   buildPaperOutcomeSummary,
@@ -291,6 +297,20 @@ function createLocalSnapshot() {
     candidateSummary: getCandidateSummary(),
     paperOutcomeSummary: buildPaperOutcomeSummary(loadPaperOutcomeHistory()),
     bestOutcomeSymbol: getBestOutcomeSymbol(loadPaperOutcomeHistory())?.symbol ?? null,
+    primaryDecision: (() => {
+      const candidates = loadCandidateReviewQueue().filter((c) => c.candidateStatus !== "DISMISSED");
+      const rankings = buildOpportunityRankings(candidates);
+      const snapshot = buildDecisionDashboardSnapshot({
+        candidates,
+        rankings,
+        latestSignalQuality: null,
+        latestIntegrity: null,
+        outcomeSummary: null,
+        outcomeSymbolSummaries: [],
+        cycleState: null,
+      });
+      return snapshot.primary;
+    })(),
     topOpportunity: (() => {
       const candidates = loadCandidateReviewQueue();
       const rankings = buildOpportunityRankings(candidates);
@@ -883,6 +903,53 @@ export default function CommandCenterDashboard() {
           </SectionCard>
 
 <SectionCard
+            id="primary-decision-title"
+            title="Primary Decision"
+            subtitle={localSnapshot.primaryDecision ? localSnapshot.primaryDecision.symbol + " -- " + getDecisionActionLabel(localSnapshot.primaryDecision.action) : "No decision yet. Run Auto Intelligence Cycle."}
+            icon={<Crosshair size={17} />}
+            badge={localSnapshot.primaryDecision ? localSnapshot.primaryDecision.confidenceLabel : "Empty"}
+          >
+            {localSnapshot.primaryDecision ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+                <Metric
+                  label="Symbol"
+                  value={localSnapshot.primaryDecision.symbol}
+                  detail={localSnapshot.primaryDecision.reasonTitle}
+                />
+                <Metric
+                  label="Action"
+                  value={localSnapshot.primaryDecision.action}
+                  detail={getDecisionActionLabel(localSnapshot.primaryDecision.action)}
+                />
+                <Metric
+                  label="Confidence"
+                  value={localSnapshot.primaryDecision.confidenceLabel}
+                  detail={`Priority: ${localSnapshot.primaryDecision.priorityScore}`}
+                />
+                <Metric
+                  label="Score"
+                  value={String(localSnapshot.primaryDecision.finalScore)}
+                  detail={getDecisionProofSummary(localSnapshot.primaryDecision)}
+                />
+                <Metric
+                  label="Risks"
+                  value={String(localSnapshot.primaryDecision.riskBullets.length)}
+                  detail={localSnapshot.primaryDecision.missingDataBullets.length + " missing"}
+                />
+              </div>
+            ) : (
+              <div className="rounded-lg p-4 text-center" style={{ border: "1px dashed rgba(201,215,227,0.1)" }}>
+                <p className="text-sm" style={{ color: "#6b7280" }}>No decision yet.</p>
+                <p className="mt-1 text-xs" style={{ color: "#4b5563" }}>Run the Auto Intelligence Cycle to generate candidates.</p>
+              </div>
+            )}
+            <div className="mt-3 flex items-start gap-2 text-xs leading-5" style={{ color: "#5f6977" }}>
+              <ShieldCheck className="mt-0.5 shrink-0" size={13} />
+              <p>Review-only. No execution. Not financial advice.</p>
+            </div>
+          </SectionCard>
+
+          <SectionCard
             id="top-opportunity-title"
             title="Top Opportunity"
             subtitle={localSnapshot.topOpportunity ? localSnapshot.topOpportunity.symbol + " -- " + localSnapshot.topOpportunity.action : "No ranked opportunity yet."}
